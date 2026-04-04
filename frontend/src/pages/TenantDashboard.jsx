@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getMyPolicies, getMyPayments, getMyKYC, submitKYC, assessRisk, getMyRisk, getPropertyByInviteCode, getPolicyQuote, createPolicy, makePayment } from '../services/api';
+import { getMyPolicies, getMyPayments, getMyKYC, submitKYC, assessRisk, getMyRisk, getPropertyByInviteCode, getPolicyQuote, createPolicy, makePayment, getPolicyContract } from '../services/api';
 import './Dashboard.css';
 
 function TenantDashboard() {
@@ -22,8 +22,9 @@ function TenantDashboard() {
   const [foundProperty, setFoundProperty] = useState(null);
   const [quote, setQuote] = useState(null);
   const [policyForm, setPolicyForm] = useState({
-    start_date: '', expiry_date: '', coverage_type: 'combined'
+    start_date: '', expiry_date: '', coverage_type: 'combined', damage_cover_limit: 500000 
   });
+  const [viewingContract, setViewingContract] = useState(null);
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -92,7 +93,15 @@ function TenantDashboard() {
       const propRes = await getPropertyByInviteCode(inviteCode);
       setFoundProperty(propRes.data);
       
-      const quoteRes = await getPolicyQuote(propRes.data.property_id);
+      const quoteRes = await getPolicyQuote({
+          property_data: propRes.data,
+          tenant_data: {
+              income: 90000, // Extracted securely via verified KYC/Bank linked models in future
+              employment_months: 36,
+              kyc_status: kyc ? kyc.status : 'approved'
+          },
+          coverages: { damage_cover_limit: policyForm.damage_cover_limit, deductible: 10000 }
+      });
       setQuote(quoteRes.data);
       setMessage({ type: 'success', text: 'Property found and Quote generated!' });
     } catch (err) {
@@ -102,14 +111,24 @@ function TenantDashboard() {
     }
   };
 
+  const handleViewContract = async (policy_id) => {
+      try {
+          const res = await getPolicyContract(policy_id);
+          setViewingContract(res.data);
+      } catch (err) {
+          setMessage({ type: 'error', text: 'Unable to fetch contract' });
+      }
+  };
+
   const handlePolicySubmit = async (e) => {
     e.preventDefault();
     try {
       const res = await createPolicy({
-        property_id: foundProperty.property_id,
+        property_data: foundProperty,
+        tenant_data: { income: 90000, employment_months: 36, kyc_status: kyc ? kyc.status : 'approved' },
+        coverages: { damage_cover_limit: policyForm.damage_cover_limit, deductible: 10000 },
         start_date: policyForm.start_date,
-        expiry_date: policyForm.expiry_date,
-        coverage_type: policyForm.coverage_type
+        expiry_date: policyForm.expiry_date
       });
       setPolicies([res.data, ...policies]);
       setMessage({ type: 'success', text: 'Policy created! Awaiting activation.' });
@@ -290,9 +309,14 @@ function TenantDashboard() {
                       <div><span>Period:</span>{new Date(pol.start_date).toLocaleDateString()} – {new Date(pol.expiry_date).toLocaleDateString()}</div>
                     </div>
                     {pol.status === 'active' && (
-                      <button className="btn-primary" style={{ marginTop: '16px', width: '100%' }} onClick={() => handlePayment(pol.policy_id, pol.premium_amount)}>
-                        Pay ₹{parseFloat(pol.premium_amount).toLocaleString()} Premium
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+                        <button className="btn-primary" style={{ flex: 1 }} onClick={() => handlePayment(pol.policy_id, pol.premium_amount)}>
+                          Pay ₹{parseFloat(pol.premium_amount).toLocaleString()}
+                        </button>
+                        <button className="btn-secondary" style={{ flex: 1 }} onClick={() => handleViewContract(pol.policy_id)}>
+                          Contract
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -316,9 +340,19 @@ function TenantDashboard() {
               <form onSubmit={handlePolicySubmit} className="glass-card form-card">
                 <div className="detail-card" style={{padding: '16px', background: 'var(--bg-primary)', borderRadius: '8px', marginBottom: '24px'}}>
                   <h3 style={{fontSize: '1.1rem', marginBottom: '12px'}}>{foundProperty.address}, {foundProperty.city}</h3>
-                  <div className="detail-row"><span>Landlord:</span><span>{foundProperty.owner_name}</span></div>
-                  <div className="detail-row"><span>Coverage (Deposit):</span><span style={{fontWeight: 'bold', color: 'var(--text-primary)'}}>₹{parseFloat(quote.coverage_amount).toLocaleString()}</span></div>
-                  <div className="detail-row"><span>Monthly Premium:</span><span style={{fontWeight: 'bold', color: 'var(--accent-1)'}}>₹{parseFloat(quote.premium_amount).toLocaleString()}/mo</span></div>
+                  <div className="detail-row"><span>Underwriting Risk Score:</span><span style={{fontWeight: 'bold'}}>{quote.risk_details.score}/100 ({quote.risk_details.level})</span></div>
+                  <div className="detail-row"><span>Coverage (Damage Limit):</span><span style={{fontWeight: 'bold', color: 'var(--text-primary)'}}>₹{parseFloat(policyForm.damage_cover_limit).toLocaleString()}</span></div>
+                  <div className="detail-row" style={{borderTop: '1px solid var(--border-color)', paddingTop: '10px', marginTop: '10px'}}>
+                      <span>Base Premium:</span><span>₹{quote.pricing?.breakdown?.base || 0}</span>
+                  </div>
+                  <div className="detail-row" style={{paddingBottom: '10px', borderBottom: '1px solid var(--border-color)'}}>
+                      <span>Risk-Loaded Factor:</span><span>₹{quote.pricing?.breakdown?.risk_loading || 0}</span>
+                  </div>
+                  <div className="detail-row"><span>Final Monthly Premium:</span><span style={{fontWeight: 'bold', color: 'var(--accent-1)'}}>₹{parseFloat(quote.pricing?.final_premium || 0).toLocaleString()}/mo</span></div>
+                  
+                  <div style={{marginTop: '10px', fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
+                      <strong>Engine Decision Summary:</strong> {quote.pricing?.summary || 'Calculations applied.'}
+                  </div>
                 </div>
 
                 <div className="form-row">
@@ -337,6 +371,20 @@ function TenantDashboard() {
                   <button type="submit" className="btn-primary" style={{flex: 2}}>Accept Quote & Apply</button>
                 </div>
               </form>
+            )}
+
+            {/* Contract Modal Overlay (repurposed dashboard layout container) */}
+            {viewingContract && (
+                <div style={{marginTop: '40px'}} className="animate-fade-in">
+                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px'}}>
+                        <h2 className="dash-subtitle" style={{margin: 0}}>Official Contract Document</h2>
+                        <button className="btn-secondary" onClick={() => setViewingContract(null)}>Close Viewer</button>
+                    </div>
+                    <div className="glass-card" style={{padding: '0', overflow: 'hidden', background: '#fff', color: '#000'}}>
+                        {/* We use dangerouslySetInnerHTML safely given it's generated entirely locally by our Backend Engines */}
+                        <div dangerouslySetInnerHTML={{ __html: viewingContract }} />
+                    </div>
+                </div>
             )}
           </div>
         )}

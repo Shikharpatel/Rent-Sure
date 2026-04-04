@@ -1,0 +1,104 @@
+﻿
+============================================================
+SCENARIO: Ideal Tenant (expect: LOW)
+============================================================
+Risk Score:             100 / 100
+Risk Level:             LOW
+Probability of Default: 0.0%
+Income/Rent Ratio:      4.8x
+
+REASONING:
+  > +5 pts: Income-to-Rent ratio of 4.80x is excellent (ΓëÑ4x threshold)
+  > +5 pts: Employment of 36 months demonstrates strong career stability (ΓëÑ24 months)
+  > 0 pts: KYC approved ΓÇö identity and documents fully verified
+  > 0 pts: Property in Mysore, a Tier 3 lower-risk market
+  > 0 pts: Unfurnished property ΓÇö minimal asset exposure, standard risk
+  > +5 pts: No prior rental defaults on record ΓÇö strong reliability signal
+  > Γ£ª Final Risk Score: 100/100 ΓåÆ Risk Level: LOW | Probability of Default: 0.0%
+
+FACTOR BREAKDOWN:
+  income_rent_ratio              +5 pts
+  employment_stability           +5 pts
+  kyc_status                     +0 pts
+  city_risk                      +0 pts
+  furnishing_level               +0 pts
+  prior_defaults                 +5 pts
+
+============================================================
+SCENARIO: Average Tenant (expect: MEDIUM)
+============================================================
+Risk Score:             65 / 100
+Risk Level:             MEDIUM
+Probability of Default: 17.5%
+Income/Rent Ratio:      2.4x
+
+REASONING:
+  > -15 pts: Income-to-Rent ratio of 2.40x is acceptable but not strong (ΓëÑ2x threshold)
+  > -10 pts: Employment of 10 months is short ΓÇö some income instability risk
+  > 0 pts: KYC approved ΓÇö identity and documents fully verified
+  > -10 pts: Property in Pune, a Tier 1 high-density metro with elevated default rates
+  > -5 pts: Semi-furnished property ΓÇö moderate asset exposure
+  > +5 pts: No prior rental defaults on record ΓÇö strong reliability signal
+  > Γ£ª Final Risk Score: 65/100 ΓåÆ Risk Level: MEDIUM | Probability of Default: 17.5%
+
+FACTOR BREAKDOWN:
+  income_rent_ratio              -15 pts
+  employment_stability           -10 pts
+  kyc_status                     +0 pts
+  city_risk                      -10 pts
+  furnishing_level               -5 pts
+  prior_defaults                 +5 pts
+
+============================================================
+SCENARIO: High-Risk Tenant (expect: HIGH)
+============================================================
+Risk Score:             0 / 100
+Risk Level:             HIGH
+Probability of Default: 50.0%
+Income/Rent Ratio:      1.36x
+
+REASONING:
+  > -40 pts: Income-to-Rent ratio of 1.36x is critically low ΓÇö high probability of payment stress
+  > -20 pts: Employment of 3 months is very short ΓÇö significant income instability risk
+  > -15 pts: KYC pending ΓÇö identity not yet verified, elevated uncertainty
+  > -10 pts: Property in Mumbai, a Tier 1 high-density metro with elevated default rates
+  > -10 pts: Fully furnished property ΓÇö higher asset exposure increases claim risk
+  > -35 pts: 2 prior rental defaults ΓÇö pattern of payment failure, high risk
+  > Γ£ª Final Risk Score: 0/100 ΓåÆ Risk Level: HIGH | Probability of Default: 50.0%
+
+FACTOR BREAKDOWN:
+  income_rent_ratio              -40 pts
+  employment_stability           -20 pts
+  kyc_status                     -15 pts
+  city_risk                      -10 pts
+  furnishing_level               -10 pts
+  prior_defaults                 -35 pts
+
+============================================================
+SCENARIO: Incomplete Data (expect: MEDIUM-HIGH)
+============================================================
+Risk Score:             40 / 100
+Risk Level:             HIGH
+Probability of Default: 30.0%
+Income/Rent Ratio:      nullx
+
+REASONING:
+  > -25 pts: Income data not provided ΓÇö moderate risk penalty applied
+  > -10 pts: Employment duration not provided ΓÇö small risk penalty applied
+  > -15 pts: KYC pending ΓÇö identity not yet verified, elevated uncertainty
+  > -10 pts: Property in Bangalore, a Tier 1 high-density metro with elevated default rates
+  > -5 pts: Semi-furnished property ΓÇö moderate asset exposure
+  > +5 pts: No prior rental defaults on record ΓÇö strong reliability signal
+  > Γ£ª Final Risk Score: 40/100 ΓåÆ Risk Level: HIGH | Probability of Default: 30.0%
+
+FACTOR BREAKDOWN:
+  income_rent_ratio              -25 pts
+  employment_stability           -10 pts
+  kyc_status                     -15 pts
+  city_risk                      -10 pts
+  furnishing_level               -5 pts
+  prior_defaults                 +5 pts
+
+============================================================
+All scenarios done.
+============================================================

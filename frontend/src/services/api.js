@@ -39,10 +39,11 @@ export const assessRisk = () => api.post('/risk/assess');
 export const getMyRisk = () => api.get('/risk/me');
 
 // Policies
-export const getPolicyQuote = (propertyId) => api.get(`/policies/quote/${propertyId}`);
+export const getPolicyQuote = (data) => api.post(`/policies/quote`, data);
 export const createPolicy = (data) => api.post('/policies', data);
 export const getMyPolicies = () => api.get('/policies/me');
 export const getLandlordPolicies = () => api.get('/policies/landlord');
+export const getPolicyContract = (id) => api.get(`/policies/${id}/contract`);
 
 // Payments
 export const makePayment = (data) => api.post('/payments', data);
@@ -52,5 +53,10 @@ export const getPaymentsByPolicy = (policyId) => api.get(`/payments/policy/${pol
 // Claims
 export const fileClaim = (data) => api.post('/claims', data);
 export const getMyClaims = () => api.get('/claims/me');
+
+// Analytics
+export const getLossRatio = () => api.get('/analytics/loss-ratio');
+export const getFraudDistribution = () => api.get('/analytics/fraud-distribution');
+export const getRiskSegmentation = () => api.get('/analytics/risk-segmentation');
 
 export default api;

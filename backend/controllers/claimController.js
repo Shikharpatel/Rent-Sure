@@ -2,48 +2,161 @@ const Claim = require('../models/claimModel');
 const Policy = require('../models/policyModel');
 const Property = require('../models/propertyModel');
 const User = require('../models/userModel');
+const { pool } = require('../config/db');
 
-// @desc    File a new claim against a policy
+const { validateClaim } = require('../services/CoverageBehaviorEngine');
+const { adjudicate } = require('../services/ClaimsAdjudicator');
+const { detectFraud } = require('../services/FraudDetector');
+const { attemptTransition } = require('../services/LifecycleStateMachine');
+// @desc    Orchestrate claim filing via Engines & State Machine
 // @route   POST /api/claims
 // @access  Private (Landlord only)
 const fileClaim = async (req, res) => {
     try {
-        const user = await User.findById(req.user.id);
-        if (!user || user.role !== 'landlord') {
-            return res.status(403).json({ message: 'Access denied. Landlords only.' });
+        const { claim_data = {}, policy_data = {} } = req.body;
+        
+        // 1. Validation Engine (Behavior)
+        const validationResult = validateClaim({
+            claim: claim_data,
+            policy: policy_data
+        });
+
+        // 2. Adjudication Engine (Payout Math)
+        const adjudicationResult = adjudicate({
+            claim: claim_data,
+            policy: policy_data,
+            validation_result: validationResult
+        });
+
+        // 3. Fraud Detection Engine (Warning system)
+        const fraudResult = detectFraud({
+            claim: claim_data,
+            policy: policy_data
+        });
+
+        // 4. Lifecycle State Machine
+        let currentState = 'filed';
+        
+        // Step 1: Attempt 'validate' transition
+        const valTransition = attemptTransition({
+            entity_type: 'claim',
+            current_state: currentState,
+            action: validationResult.is_valid ? 'validate' : 'reject_early'
+        });
+        
+        if (!valTransition.success) {
+            return res.status(400).json({ error: valTransition.error, code: 'CLAIM_INVALID' });
+        }
+        currentState = valTransition.next_state; // 'validated' or 'rejected'
+
+        // Step 2: Attempt 'approve'/'reject' transition if we made it to 'validated'
+        let finalTransition = valTransition;
+        if (currentState === 'validated') {
+            finalTransition = attemptTransition({
+                entity_type: 'claim',
+                current_state: currentState,
+                action: adjudicationResult.approved ? 'approve' : 'reject'
+            });
+            if (finalTransition.success) {
+                currentState = finalTransition.next_state;
+            }
         }
 
-        const { policy_id, description, evidence_url, claim_amount } = req.body;
+        // 5. Database Persistence (Strict Transaction)
+        const client = await pool.connect();
+        let dbClaimId, dbCreatedAt;
 
-        if (!policy_id || !description || !claim_amount) {
-            return res.status(400).json({ message: 'Please provide policy_id, description, and claim_amount' });
+        try {
+            await client.query('BEGIN');
+
+            const landlordId = req.user ? req.user.id : null;
+            const linkedPolicyId = policy_data.policy_id || null;
+
+            // Integrity Check: Foreign Key Policy existence
+            if (linkedPolicyId) {
+                const polCheck = await client.query('SELECT policy_id FROM Policies WHERE policy_id = $1', [linkedPolicyId]);
+                if (polCheck.rows.length === 0) {
+                    const integrityError = new Error(`Referential Integrity Failed: Policy ID ${linkedPolicyId} not found in database.`);
+                    integrityError.type = 'POLICY_NOT_FOUND';
+                    throw integrityError;
+                }
+            }
+
+            // Normalization: Ensure cleanly stringified JSON for arrays to prevent database corruption
+            const reasonText = adjudicationResult.reasoning 
+                ? JSON.stringify(adjudicationResult.reasoning) 
+                : '[]';
+
+            const claimQuery = `
+                INSERT INTO Claims (
+                    policy_id, landlord_id, description, claim_amount, 
+                    damage_classification, calculated_payout, fraud_score, 
+                    adjudication_reasoning, status
+                ) 
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                RETURNING claim_id, created_at;
+            `;
+
+            const dbRes = await client.query(claimQuery, [
+                linkedPolicyId,
+                landlordId,
+                claim_data.description || 'System Orchestrated Claim',
+                claim_data.claim_amount || 0,
+                claim_data.damage_classification || null,
+                adjudicationResult.calculated_payout || 0,
+                fraudResult.fraud_score || 0,
+                reasonText,
+                currentState
+            ]);
+
+            dbClaimId = dbRes.rows[0].claim_id;
+            dbCreatedAt = dbRes.rows[0].created_at;
+
+            await client.query('COMMIT');
+        } catch (dbErr) {
+            await client.query('ROLLBACK');
+            if (dbErr.type === 'POLICY_NOT_FOUND') {
+                return res.status(404).json({ error: dbErr.message, code: 'POLICY_NOT_FOUND' });
+            }
+            if (dbErr.code === '23503') {
+                return res.status(400).json({ error: 'Database constraint failed on foreign key map.', code: 'DB_CONSTRAINT_FAILED' });
+            }
+            return res.status(500).json({ error: 'Database transaction aborted.', code: 'INTERNAL_ERROR' });
+        } finally {
+            client.release();
         }
 
-        // Verify the policy exists and is linked to the landlord's property
-        const policy = await Policy.findById(policy_id);
-        if (!policy) {
-            return res.status(404).json({ message: 'Policy not found' });
-        }
+        // 6. Assemble Immutable Output Payload
+        const claimAssembly = {
+            claim_id: dbClaimId,
+            created_at: dbCreatedAt,
+            validation_result: {
+                is_valid: validationResult.is_valid,
+                summary: validationResult.validation_summary,
+                rejection_reasons: validationResult.rejection_reasons
+            },
+            adjudication_result: {
+                approved: adjudicationResult.approved,
+                calculated_payout: adjudicationResult.calculated_payout,
+                breakdown: adjudicationResult.breakdown,
+                reasoning: adjudicationResult.reasoning
+            },
+            fraud_analysis: {
+                score: fraudResult.fraud_score,
+                risk_flag: fraudResult.risk_flag,
+                reasons: fraudResult.reasons
+            },
+            state: {
+                initial: 'filed',
+                current: currentState,
+                state_reasoning: finalTransition.reasoning
+            }
+        };
 
-        const property = await Property.findById(policy.property_id);
-        if (!property || property.owner_id !== req.user.id) {
-            return res.status(403).json({ message: 'This policy is not linked to any of your properties' });
-        }
-
-        if (policy.status !== 'active') {
-            return res.status(400).json({ message: 'Can only file claims against active policies' });
-        }
-
-        // Verify claim amount doesn't exceed coverage
-        if (parseFloat(claim_amount) > parseFloat(policy.coverage_amount)) {
-            return res.status(400).json({ message: 'Claim amount exceeds policy coverage of ' + policy.coverage_amount });
-        }
-
-        const claim = await Claim.create(policy_id, req.user.id, description, evidence_url, claim_amount);
-        res.status(201).json(claim);
+        res.status(201).json(claimAssembly);
     } catch (error) {
-        console.error('Error in fileClaim:', error);
-        res.status(500).json({ message: 'Server error filing claim' });
+        console.error('Error orchestrating claim filing:', error);
+        res.status(500).json({ error: 'Server error filing claim via Engines.', code: 'INTERNAL_ERROR' });
     }
 };
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getMyProperties, createProperty, deleteProperty, getLandlordPolicies, getMyClaims, fileClaim } from '../services/api';
+import { getMyProperties, createProperty, deleteProperty, getLandlordPolicies, getMyClaims, fileClaim, getLossRatio, getFraudDistribution, getRiskSegmentation } from '../services/api';
 import './Dashboard.css';
 
 function LandlordDashboard() {
@@ -12,12 +12,13 @@ function LandlordDashboard() {
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [analytics, setAnalytics] = useState({ lossRatio: 0, fraudData: [], riskData: [] });
 
   // Property form
   const [propForm, setPropForm] = useState({ address: '', city: '', rent_amount: '', estimated_deposit: '', building_year: '' });
 
   // Claim form
-  const [claimForm, setClaimForm] = useState({ policy_id: '', description: '', evidence_url: '', claim_amount: '' });
+  const [claimForm, setClaimForm] = useState({ policy_id: '', description: '', evidence_url: '', claim_amount: '', damage_classification: 'minor' });
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -34,14 +35,20 @@ function LandlordDashboard() {
 
   const loadData = async () => {
     try {
-      const [propRes, polRes, claimRes] = await Promise.allSettled([
+      const [propRes, polRes, claimRes, lossRes, fraudRes, riskRes] = await Promise.allSettled([
         getMyProperties(),
         getLandlordPolicies(),
         getMyClaims(),
+        getLossRatio(),
+        getFraudDistribution(),
+        getRiskSegmentation()
       ]);
       if (propRes.status === 'fulfilled') setProperties(propRes.value.data);
       if (polRes.status === 'fulfilled') setPolicies(polRes.value.data);
       if (claimRes.status === 'fulfilled') setClaims(claimRes.value.data);
+      if (lossRes.status === 'fulfilled') setAnalytics(prev => ({...prev, lossRatio: lossRes.value.data.data.loss_ratio }));
+      if (fraudRes.status === 'fulfilled') setAnalytics(prev => ({...prev, fraudData: fraudRes.value.data.data }));
+      if (riskRes.status === 'fulfilled') setAnalytics(prev => ({...prev, riskData: riskRes.value.data.data }));
     } catch (err) {
       console.error(err);
     } finally {
@@ -74,10 +81,18 @@ function LandlordDashboard() {
   const handleClaimSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fileClaim(claimForm);
+      const res = await fileClaim({
+          claim_data: claimForm,
+          policy_data: { 
+              policy_id: claimForm.policy_id, 
+              coverage_limit: 500000, 
+              deductible: 10000, 
+              coverages: ['property_damage', 'rent_default'] 
+          }
+      });
       setClaims([res.data, ...claims]);
       setMessage({ type: 'success', text: 'Claim filed successfully!' });
-      setClaimForm({ policy_id: '', description: '', evidence_url: '', claim_amount: '' });
+      setClaimForm({ policy_id: '', description: '', evidence_url: '', claim_amount: '', damage_classification: 'minor' });
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to file claim' });
     }
@@ -109,7 +124,7 @@ function LandlordDashboard() {
           <span className="text-gradient">Rent</span>Sure
         </div>
         <nav className="sidebar-nav">
-          {['overview', 'properties', 'policies', 'claims'].map(tab => (
+          {['overview', 'properties', 'policies', 'claims', 'analytics'].map(tab => (
             <button key={tab} className={`sidebar-link ${activeTab === tab ? 'sidebar-link-active' : ''}`} onClick={() => { setActiveTab(tab); setMessage({ type: '', text: '' }); }}>
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
@@ -274,14 +289,15 @@ function LandlordDashboard() {
             {claims.length > 0 && (
               <div className="table-wrap glass-card" style={{ marginBottom: '40px' }}>
                 <table className="dash-table">
-                  <thead><tr><th>Property</th><th>Amount</th><th>Status</th><th>Filed</th></tr></thead>
+                  <thead><tr><th>Property</th><th>Claim Amount</th><th>Final Payout</th><th>Fraud Matrix</th><th>Status</th></tr></thead>
                   <tbody>
                     {claims.map(c => (
                       <tr key={c.claim_id}>
-                        <td>{c.property_address}</td>
+                        <td>{c.property_address || c.claim_id.substring(0,8)}</td>
                         <td>₹{parseFloat(c.claim_amount).toLocaleString()}</td>
+                        <td style={{color: 'var(--accent-1)', fontWeight: 'bold'}}>₹{parseFloat(c.calculated_payout || 0).toLocaleString()}</td>
+                        <td><span className="badge badge-warning" style={{background: c.fraud_score > 30 ? '#e74c3c' : '#f39c12'}}>{c.fraud_score}/100</span></td>
                         <td>{statusBadge(c.status)}</td>
-                        <td>{new Date(c.created_at).toLocaleDateString()}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -314,8 +330,53 @@ function LandlordDashboard() {
                   <input className="input-field" placeholder="https://..." value={claimForm.evidence_url} onChange={e => setClaimForm({ ...claimForm, evidence_url: e.target.value })} />
                 </div>
               </div>
+              <div className="form-group">
+                  <label className="form-label">Damage Classification (For Adjuster)</label>
+                  <select className="input-field" value={claimForm.damage_classification} onChange={e => setClaimForm({ ...claimForm, damage_classification: e.target.value })}>
+                      <option value="minor">Minor Wear & Tear</option>
+                      <option value="moderate">Moderate Damage</option>
+                      <option value="severe">Severe Structural Impact</option>
+                  </select>
+              </div>
               <button type="submit" className="btn-primary">File Claim</button>
             </form>
+          </div>
+        )}
+
+        {/* Analytics Tab */}
+        {activeTab === 'analytics' && (
+          <div className="animate-fade-in">
+            <h1 className="dash-title">System Intelligence & Analytics</h1>
+            
+            <div className="stats-grid">
+               <div className="glass-card stat-card" style={{ borderLeft: '4px solid var(--accent-1)' }}>
+                 <div className="stat-label">Platform Loss Ratio</div>
+                 <div className="stat-value">{analytics.lossRatio}</div>
+                 <div style={{fontSize: '12px', color: '#7f8c8d', marginTop: '4px'}}>Total Paid ÷ Total Collected</div>
+               </div>
+            </div>
+
+            <div className="grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginTop: '30px' }}>
+                <div className="glass-card detail-card" style={{ padding: '20px' }}>
+                    <h3 style={{marginBottom: '15px', borderBottom: '1px solid #eee', paddingBottom: '10px'}}>Fraud Distribution Curve</h3>
+                    {analytics.fraudData.map((f, i) => (
+                        <div key={i} className="detail-row">
+                            <span style={{fontWeight: 'bold'}}>{f.risk_flag} Risk:</span>
+                            <span>{f.count} Claims</span>
+                        </div>
+                    ))}
+                </div>
+                
+                <div className="glass-card detail-card" style={{ padding: '20px' }}>
+                    <h3 style={{marginBottom: '15px', borderBottom: '1px solid #eee', paddingBottom: '10px'}}>Underwriting Segmentation</h3>
+                    {analytics.riskData.map((r, i) => (
+                        <div key={i} className="detail-row">
+                            <span style={{fontWeight: 'bold'}}>{r.risk_level.toUpperCase()} Tier:</span>
+                            <span>{r.count} Tenants Associated</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
           </div>
         )}
       </main>

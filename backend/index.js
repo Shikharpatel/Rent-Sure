@@ -17,6 +17,7 @@ app.use('/api/risk', require('./routes/riskRoutes'));
 app.use('/api/policies', require('./routes/policyRoutes'));
 app.use('/api/payments', require('./routes/paymentRoutes'));
 app.use('/api/claims', require('./routes/claimRoutes'));
+app.use('/api/analytics', require('./routes/analyticsRoutes'));
 
 // Basic health check route
 app.get('/api/health', async (req, res) => {
