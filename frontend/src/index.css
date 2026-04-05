@@ -214,6 +214,15 @@ input, select, textarea {
   background: var(--bg-glass-hover);
 }
 
+select.input-field {
+  color-scheme: dark;
+}
+
+.input-field option {
+  background: #1e1b2e;
+  color: #f1f5f9;
+}
+
 .form-label {
   display: block;
   margin-bottom: 8px;
