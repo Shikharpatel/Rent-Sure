@@ -197,7 +197,15 @@ function AdminDashboard() {
                         return (
                           <div style={{ gridColumn: '1 / -1', marginTop: '10px', fontSize: '11px', background: 'rgba(0,0,0,0.2)', padding: '10px', borderRadius: '8px' }}>
                             <div style={{ marginBottom: '5px', fontWeight: 'bold', color: 'var(--accent-1)' }}>Underwriting Data</div>
-                            <p>Risk Score: <strong>{pd.risk_score ?? 'N/A'}</strong> | Level: <strong>{pd.risk_level ?? 'N/A'}</strong> | P(Default): <strong>{pd.probability_of_default ?? 'N/A'}</strong></p>
+                            <p>
+                              Stability Score: <strong>{pd.risk_score ?? 'N/A'}</strong>
+                              <span style={{ fontSize: '0.75em', color: 'var(--text-muted)', marginLeft: '4px' }}>(higher = safer)</span>
+                              {' | '}Level:{' '}
+                              <span style={{ fontWeight: 'bold', color: pd.risk_level === 'low' ? '#34d399' : pd.risk_level === 'medium' ? '#fbbf24' : '#f87171' }}>
+                                {pd.risk_level ?? 'N/A'}
+                              </span>
+                              {' | '}P(Default): <strong>{pd.probability_of_default ?? 'N/A'}</strong>
+                            </p>
                             <p style={{ marginTop: '4px' }}>Base: ₹{pd.pricing_breakdown?.base ?? 0} | Risk Loading: ₹{pd.pricing_breakdown?.risk_loading ?? 0}</p>
                           </div>
                         );
@@ -431,19 +439,17 @@ function AdminDashboard() {
                         data={riskPieData}
                         cx="50%"
                         cy="50%"
-                        innerRadius={55}
-                        outerRadius={90}
-                        paddingAngle={3}
+                        innerRadius={50}
+                        outerRadius={80}
+                        paddingAngle={5}
                         dataKey="value"
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                        labelLine={false}
                       >
                         {riskPieData.map((entry, index) => (
                           <Cell key={index} fill={entry.fill} />
                         ))}
                       </Pie>
                       <Tooltip contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-primary)' }} />
-                      <Legend formatter={(value) => <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{value}</span>} />
+                      <Legend formatter={(value, entry) => <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{value} ({entry.payload.value})</span>} />
                     </PieChart>
                   </ResponsiveContainer>
                 )}
