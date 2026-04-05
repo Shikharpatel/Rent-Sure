@@ -33,9 +33,10 @@ export const getMyProperties = () => api.get('/properties/mine');
 export const getPropertyByInviteCode = (code) => api.get(`/properties/invite/${code}`);
 export const updateProperty = (id, data) => api.put(`/properties/${id}`, data);
 export const deleteProperty = (id) => api.delete(`/properties/${id}`);
+export const regenerateInviteCode = (id) => api.post(`/properties/${id}/regenerate-invite`);
 
 // Risk
-export const assessRisk = () => api.post('/risk/assess');
+export const assessRisk = (data) => api.post('/risk/assess', data);
 export const getMyRisk = () => api.get('/risk/me');
 
 // Policies
