@@ -556,9 +556,17 @@ function TenantDashboard() {
               <div style={{ marginTop: '40px' }} className="animate-fade-in">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                   <h2 className="dash-subtitle" style={{ margin: 0 }}>Official Contract Document</h2>
-                  <button className="btn-secondary" onClick={() => setViewingContract(null)}>Close Viewer</button>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button className="btn-primary" onClick={() => {
+                      const w = window.open('', '_blank');
+                      w.document.write(viewingContract);
+                      w.document.close();
+                      w.print();
+                    }}>Print / Save PDF</button>
+                    <button className="btn-secondary" onClick={() => setViewingContract(null)}>Close Viewer</button>
+                  </div>
                 </div>
-                <div className="glass-card" style={{ padding: '0', overflow: 'hidden', background: '#fff', color: '#000' }}>
+                <div className="glass-card" style={{ padding: '0', overflow: 'auto', maxHeight: '70vh', background: '#fff', color: '#000' }}>
                   <div dangerouslySetInnerHTML={{ __html: viewingContract }} />
                 </div>
               </div>
