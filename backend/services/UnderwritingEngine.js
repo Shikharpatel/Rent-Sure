@@ -234,6 +234,8 @@ function assess(inputs = {}) {
     { key: 'employment_stability',    result: evaluateEmploymentStability(employmentStabilityMonths) },
     { key: 'kyc_status',              result: evaluateKYCStatus(kycStatus) },
     { key: 'prior_defaults',          result: evaluatePriorDefaults(priorDefaults) },
+    { key: 'city_risk',               result: evaluateCityRisk(city) },
+    { key: 'furnishing_level',        result: evaluateFurnishingLevel(furnishingLevel) },
   ];
 
   // ── Accumulate deltas and build reasoning ──────────────────────────────────

@@ -49,9 +49,9 @@ const RATES = {
   // Rationale: marginal cost of insuring incremental coverage decreases at higher limits
   // (insurers diversify portfolio risk at scale — passes through as lower per-unit cost)
   DAMAGE_COVER_TIERS: [
-    { upTo: 50000,   rate: 0.008 }, // 0.8% on first Rs.50k
-    { upTo: 150000,  rate: 0.006 }, // 0.6% on Rs.50k–Rs.150k
-    { upTo: Infinity, rate: 0.004 }, // 0.4% on anything above Rs.150k
+    { upTo: 50000,   rate: 0.012 }, // 1.2% on first Rs.50k
+    { upTo: 150000,  rate: 0.009 }, // 0.9% on Rs.50k–Rs.150k
+    { upTo: Infinity, rate: 0.006 }, // 0.6% on anything above Rs.150k
   ],
 
   // Deductible discount factor: applies as small (-) to final pre-cap premium.
@@ -66,8 +66,8 @@ const RATES = {
 
   // Premium Safety Cap: maximum monthly premium as multiple of monthly rent.
   // Prevents unrealistic premiums from extreme input combinations.
-  // E.g., cap = 25% means: premium > 0.25 * rent triggers cap (and reasoning note).
-  PREMIUM_CAP_RENT_MULTIPLE: 0.25,
+  // E.g., cap = 50% means: premium > 0.5 * rent triggers cap (and reasoning note).
+  PREMIUM_CAP_RENT_MULTIPLE: 0.5,
 
   // Stage 3: Property surcharges (as multiplier on accumulated premium)
   FURNISHING: {
@@ -362,13 +362,14 @@ function price(inputs = {}) {
   }
 
   // ── Safety Cap (applied last — absolute ceiling) ─────────────────────────
-  // Cap = 25% of monthly rent. Prevents extreme combinations from producing absurd premiums.
+  // Cap = PREMIUM_CAP_RENT_MULTIPLE of monthly rent. Prevents extreme combinations from producing absurd premiums.
   const rentVal   = parseFloat(rent_amount) || 0;
   const cap_limit = rentVal > 0 ? Math.round(rentVal * RATES.PREMIUM_CAP_RENT_MULTIPLE) : null;
   let cap_applied = false;
+  const capPct = Math.round(RATES.PREMIUM_CAP_RENT_MULTIPLE * 100);
   if (cap_limit && final_premium > cap_limit) {
-    adjustments.push({ label: `Safety Cap Applied (25% of rent)`, amount: -(final_premium - cap_limit), type: 'cap' });
-    reasoning.push(`[CAP] Premium Rs.${final_premium} exceeded cap of Rs.${cap_limit} (25% of rent Rs.${rentVal.toLocaleString()}) — capped at Rs.${cap_limit}`);
+    adjustments.push({ label: `Safety Cap Applied (${capPct}% of rent)`, amount: -(final_premium - cap_limit), type: 'cap' });
+    reasoning.push(`[CAP] Premium Rs.${final_premium} exceeded cap of Rs.${cap_limit} (${capPct}% of rent Rs.${rentVal.toLocaleString()}) — capped at Rs.${cap_limit}`);
     final_premium = cap_limit;
     cap_applied   = true;
   }
