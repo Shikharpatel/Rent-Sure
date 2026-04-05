@@ -1,6 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/db');
+const { protect } = require('../middleware/authMiddleware');
+
+const adminOnly = (req, res, next) => {
+    if (req.user && req.user.role === 'admin') {
+        next();
+    } else {
+        res.status(403).json({ message: 'Access denied. Admin only.' });
+    }
+};
+
+router.use(protect);
+router.use(adminOnly);
 
 // @desc    Calculate total loss ratio (Total Claims Paid / Total Premium Collected)
 // @route   GET /api/analytics/loss-ratio

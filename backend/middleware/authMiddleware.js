@@ -20,8 +20,19 @@ const protect = async (req, res, next) => {
             // Verify token
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-            // Attach user ID to the request
-            req.user = { id: decoded.id };
+            // Fetch user from database to get the role
+            const User = require('../models/userModel');
+            const user = await User.findById(decoded.id);
+            
+            if (!user) {
+                return res.status(401).json({ message: 'User no longer exists' });
+            }
+
+            // Attach user data to the request
+            req.user = { 
+                id: user.user_id,
+                role: user.role 
+            };
             next();
         } catch (error) {
             console.error(error);

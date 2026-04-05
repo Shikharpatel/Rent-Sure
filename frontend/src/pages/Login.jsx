@@ -23,7 +23,9 @@ function Login() {
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user', JSON.stringify(res.data));
 
-      if (res.data.role === 'landlord') {
+      if (res.data.role === 'admin') {
+        navigate('/admin');
+      } else if (res.data.role === 'landlord') {
         navigate('/landlord');
       } else {
         navigate('/tenant');

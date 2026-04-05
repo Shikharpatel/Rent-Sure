@@ -12,7 +12,6 @@ function LandlordDashboard() {
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState({ type: '', text: '' });
-  const [analytics, setAnalytics] = useState({ lossRatio: 0, fraudData: [], riskData: [] });
 
   // Property form
   const [propForm, setPropForm] = useState({ address: '', city: '', rent_amount: '', estimated_deposit: '', building_year: '' });
@@ -35,20 +34,14 @@ function LandlordDashboard() {
 
   const loadData = async () => {
     try {
-      const [propRes, polRes, claimRes, lossRes, fraudRes, riskRes] = await Promise.allSettled([
+      const [propRes, polRes, claimRes] = await Promise.allSettled([
         getMyProperties(),
         getLandlordPolicies(),
-        getMyClaims(),
-        getLossRatio(),
-        getFraudDistribution(),
-        getRiskSegmentation()
+        getMyClaims()
       ]);
       if (propRes.status === 'fulfilled') setProperties(propRes.value.data);
       if (polRes.status === 'fulfilled') setPolicies(polRes.value.data);
       if (claimRes.status === 'fulfilled') setClaims(claimRes.value.data);
-      if (lossRes.status === 'fulfilled') setAnalytics(prev => ({...prev, lossRatio: lossRes.value.data.data.loss_ratio }));
-      if (fraudRes.status === 'fulfilled') setAnalytics(prev => ({...prev, fraudData: fraudRes.value.data.data }));
-      if (riskRes.status === 'fulfilled') setAnalytics(prev => ({...prev, riskData: riskRes.value.data.data }));
     } catch (err) {
       console.error(err);
     } finally {
@@ -124,7 +117,7 @@ function LandlordDashboard() {
           <span className="text-gradient">Rent</span>Sure
         </div>
         <nav className="sidebar-nav">
-          {['overview', 'properties', 'policies', 'claims', 'analytics'].map(tab => (
+          {['overview', 'properties', 'policies', 'claims'].map(tab => (
             <button key={tab} className={`sidebar-link ${activeTab === tab ? 'sidebar-link-active' : ''}`} onClick={() => { setActiveTab(tab); setMessage({ type: '', text: '' }); }}>
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
@@ -343,42 +336,7 @@ function LandlordDashboard() {
           </div>
         )}
 
-        {/* Analytics Tab */}
-        {activeTab === 'analytics' && (
-          <div className="animate-fade-in">
-            <h1 className="dash-title">System Intelligence & Analytics</h1>
-            
-            <div className="stats-grid">
-               <div className="glass-card stat-card" style={{ borderLeft: '4px solid var(--accent-1)' }}>
-                 <div className="stat-label">Platform Loss Ratio</div>
-                 <div className="stat-value">{analytics.lossRatio}</div>
-                 <div style={{fontSize: '12px', color: '#7f8c8d', marginTop: '4px'}}>Total Paid ÷ Total Collected</div>
-               </div>
-            </div>
-
-            <div className="grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginTop: '30px' }}>
-                <div className="glass-card detail-card" style={{ padding: '20px' }}>
-                    <h3 style={{marginBottom: '15px', borderBottom: '1px solid #eee', paddingBottom: '10px'}}>Fraud Distribution Curve</h3>
-                    {analytics.fraudData.map((f, i) => (
-                        <div key={i} className="detail-row">
-                            <span style={{fontWeight: 'bold'}}>{f.risk_flag} Risk:</span>
-                            <span>{f.count} Claims</span>
-                        </div>
-                    ))}
-                </div>
-                
-                <div className="glass-card detail-card" style={{ padding: '20px' }}>
-                    <h3 style={{marginBottom: '15px', borderBottom: '1px solid #eee', paddingBottom: '10px'}}>Underwriting Segmentation</h3>
-                    {analytics.riskData.map((r, i) => (
-                        <div key={i} className="detail-row">
-                            <span style={{fontWeight: 'bold'}}>{r.risk_level.toUpperCase()} Tier:</span>
-                            <span>{r.count} Tenants Associated</span>
-                        </div>
-                    ))}
-                </div>
-            </div>
-          </div>
-        )}
+        {/* Deleted Analytics Tab */}
       </main>
     </div>
   );

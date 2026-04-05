@@ -47,6 +47,10 @@ const STATE_MACHINES = {
       reject_early: 'rejected' // Logical early-out
     },
     validated: {
+      review: 'under_review',
+      reject_early: 'rejected'
+    },
+    under_review: {
       approve: 'approved',
       reject: 'rejected'
     },

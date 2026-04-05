@@ -72,6 +72,21 @@ const Policy = {
         return result.rows[0];
     },
 
+    // Get all pending policies (admin view)
+    findAllPending: async () => {
+        const query = `
+      SELECT pol.*, p.address AS property_address, p.city AS property_city,
+             u.name AS tenant_name
+      FROM Policies pol
+      JOIN Properties p ON pol.property_id = p.property_id
+      JOIN Users u ON pol.tenant_id = u.user_id
+      WHERE pol.status = 'under_review'
+      ORDER BY pol.created_at ASC;
+    `;
+        const result = await db.query(query);
+        return result.rows;
+    },
+
     // Find policies linked to a landlord's properties
     findByLandlordId: async (landlordId) => {
         const query = `

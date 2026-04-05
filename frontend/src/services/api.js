@@ -59,4 +59,10 @@ export const getLossRatio = () => api.get('/analytics/loss-ratio');
 export const getFraudDistribution = () => api.get('/analytics/fraud-distribution');
 export const getRiskSegmentation = () => api.get('/analytics/risk-segmentation');
 
+// Admin Routes
+export const getPendingPolicies = () => api.get('/admin/policies/pending');
+export const reviewPolicy = (id, data) => api.post(`/admin/policies/${id}/review`, data);
+export const getPendingClaims = () => api.get('/admin/claims/pending');
+export const reviewClaim = (id, data) => api.post(`/admin/claims/${id}/review`, data);
+
 export default api;

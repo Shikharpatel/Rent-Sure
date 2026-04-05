@@ -49,13 +49,13 @@ const fileClaim = async (req, res) => {
         }
         currentState = valTransition.next_state; // 'validated' or 'rejected'
 
-        // Step 2: Attempt 'approve'/'reject' transition if we made it to 'validated'
+        // Step 2: Attempt 'review' transition if we made it to 'validated'
         let finalTransition = valTransition;
         if (currentState === 'validated') {
             finalTransition = attemptTransition({
                 entity_type: 'claim',
                 current_state: currentState,
-                action: adjudicationResult.approved ? 'approve' : 'reject'
+                action: 'review'
             });
             if (finalTransition.success) {
                 currentState = finalTransition.next_state;
@@ -72,13 +72,18 @@ const fileClaim = async (req, res) => {
             const landlordId = req.user ? req.user.id : null;
             const linkedPolicyId = policy_data.policy_id || null;
 
-            // Integrity Check: Foreign Key Policy existence
+            // Integrity Check: Foreign Key Policy existence && active status
             if (linkedPolicyId) {
-                const polCheck = await client.query('SELECT policy_id FROM Policies WHERE policy_id = $1', [linkedPolicyId]);
+                const polCheck = await client.query('SELECT policy_id, status FROM Policies WHERE policy_id = $1', [linkedPolicyId]);
                 if (polCheck.rows.length === 0) {
                     const integrityError = new Error(`Referential Integrity Failed: Policy ID ${linkedPolicyId} not found in database.`);
                     integrityError.type = 'POLICY_NOT_FOUND';
                     throw integrityError;
+                }
+                if (polCheck.rows[0].status !== 'active') {
+                    const statusError = new Error(`Claims can only be filed against active policies. Current status is ${polCheck.rows[0].status}.`);
+                    statusError.type = 'POLICY_NOT_ACTIVE';
+                    throw statusError;
                 }
             }
 
@@ -117,6 +122,9 @@ const fileClaim = async (req, res) => {
             await client.query('ROLLBACK');
             if (dbErr.type === 'POLICY_NOT_FOUND') {
                 return res.status(404).json({ error: dbErr.message, code: 'POLICY_NOT_FOUND' });
+            }
+            if (dbErr.type === 'POLICY_NOT_ACTIVE') {
+                return res.status(400).json({ error: dbErr.message, code: 'POLICY_NOT_ACTIVE' });
             }
             if (dbErr.code === '23503') {
                 return res.status(400).json({ error: 'Database constraint failed on foreign key map.', code: 'DB_CONSTRAINT_FAILED' });

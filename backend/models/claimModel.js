@@ -63,7 +63,7 @@ const Claim = {
       JOIN Policies pol ON c.policy_id = pol.policy_id
       JOIN Properties p ON pol.property_id = p.property_id
       JOIN Users u ON c.landlord_id = u.user_id
-      WHERE c.status = 'pending'
+      WHERE c.status = 'under_review'
       ORDER BY c.created_at ASC;
     `;
         const result = await db.query(query);
