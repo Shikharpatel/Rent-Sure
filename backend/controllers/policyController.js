@@ -16,23 +16,61 @@ const { generateContractHTML } = require('../utils/DocumentGenerator');
 const getPolicyQuote = async (req, res) => {
     try {
         const { tenant_data = {}, property_data = {}, coverages = {}, add_ons = {} } = req.body;
+
+        // Validation for coverage limit
+        const allowedLimits = [100000, 300000, 500000];
+        const requestedLimit = Number(coverages.damage_cover_limit || 500000);
         
-        // 1. Run Underwriting (Risk Assessment)
+        if (!allowedLimits.includes(requestedLimit)) {
+            return res.status(400).json({ 
+                error: "Invalid coverage limit. Must be one of: ₹1,00,000, ₹3,00,000, or ₹5,00,000.", 
+                code: "INVALID_COVERAGE_LIMIT" 
+            });
+        }
+
+        const safeCoverages = {
+            damage_cover_limit: requestedLimit,
+            rent_default_months: Number(coverages.rent_default_months || 2),
+            deductible: Number(coverages.deductible || 10000)
+        };
+
+        // 0. Resolve Property ID and Fetch from DB (Trust Source)
+        const propertyId = req.body.property_id || property_data.property_id || property_data.id;
+        if (!propertyId) {
+            return res.status(400).json({ error: "Invalid property reference", code: "INVALID_PROPERTY_ID" });
+        }
+
+        const property = await Property.findById(propertyId);
+        if (!property) {
+            return res.status(404).json({ error: "Property not found in database", code: "PROPERTY_NOT_FOUND" });
+        }
+
+        const safeProperty = {
+            rent_amount: property.rent_amount,
+            city: property.city,
+            furnishing_level: property.furnishing_level
+        };
+
+        // 1. Fetch actual KYC status from DB (Truth Source)
+        const kycRecord = await KYC.findByUserId(req.user.id);
+        const kycStatus = kycRecord?.status || 'pending';
+
+        // 2. Run Underwriting (Risk Assessment)
         const underwritingResult = assess({
             monthlyIncome: tenant_data.income,
-            rentAmount: property_data.rent_amount,
+            rentAmount: safeProperty.rent_amount,
             employmentStabilityMonths: tenant_data.employment_months,
-            kycStatus: tenant_data.kyc_status || 'approved',
-            city: property_data.city,
-            furnishingLevel: property_data.furnishing_level,
+            kycStatus: kycStatus,
+            city: safeProperty.city,
+            furnishingLevel: safeProperty.furnishing_level,
             priorDefaults: tenant_data.prior_defaults || 0
         });
 
-        // 2. Run Pricing
+        // 3. Run Pricing
         const pricingResult = price({
             underwriting: underwritingResult,
-            property: property_data,
-            coverages: coverages,
+            property: safeProperty,
+            coverages: safeCoverages,
             addOns: add_ons
         });
 
@@ -45,7 +83,8 @@ const getPolicyQuote = async (req, res) => {
             pricing: {
                 final_premium: pricingResult.final_premium,
                 breakdown: pricingResult.metadata.stages,
-                summary: pricingResult.explainability_summary
+                summary: pricingResult.explainability_summary,
+                cap_applied: pricingResult.metadata.cap_applied
             },
             explainability: {
                 underwriting_reasons: underwritingResult.reasoning,
@@ -65,21 +104,62 @@ const createPolicy = async (req, res) => {
     try {
         const { tenant_data = {}, property_data = {}, coverages = {}, add_ons = {} } = req.body;
         
+        // Validation for coverage limit
+        const allowedLimits = [100000, 300000, 500000];
+        const requestedLimit = Number(coverages.damage_cover_limit || 500000);
+        
+        if (!allowedLimits.includes(requestedLimit)) {
+            return res.status(400).json({ 
+                error: "Invalid coverage limit. Must be one of: ₹1,00,000, ₹3,00,000, or ₹5,00,000.", 
+                code: "INVALID_COVERAGE_LIMIT" 
+            });
+        }
+
+        const safeCoverages = {
+            damage_cover_limit: requestedLimit,
+            rent_default_months: Number(coverages.rent_default_months || 2),
+            deductible: Number(coverages.deductible || 10000)
+        };
+
+        // 0. Resolve Property ID strictly and Fetch from DB (Truth Source)
+        const propertyId = req.body.property_id || property_data.property_id || property_data.id;
+        if (!propertyId) {
+            return res.status(400).json({ 
+                error: "Invalid property reference. Please select a valid property.", 
+                code: "INVALID_PROPERTY_ID" 
+            });
+        }
+
+        const property = await Property.findById(propertyId);
+        if (!property) {
+            return res.status(404).json({ error: "Property not found in database", code: "PROPERTY_NOT_FOUND" });
+        }
+
+        const safeProperty = {
+            rent_amount: property.rent_amount,
+            city: property.city,
+            furnishing_level: property.furnishing_level
+        };
+
         // 1. Core Engines
+        // Fetch actual KYC status from DB (Truth Source)
+        const kycRecord = await KYC.findByUserId(req.user.id);
+        const kycStatus = kycRecord?.status || 'pending';
+
         const underwritingResult = assess({
             monthlyIncome: tenant_data.income,
-            rentAmount: property_data.rent_amount,
+            rentAmount: safeProperty.rent_amount,
             employmentStabilityMonths: tenant_data.employment_months,
-            kycStatus: tenant_data.kyc_status || 'approved',
-            city: property_data.city,
-            furnishingLevel: property_data.furnishing_level,
+            kycStatus: kycStatus,
+            city: safeProperty.city,
+            furnishingLevel: safeProperty.furnishing_level,
             priorDefaults: tenant_data.prior_defaults || 0
         });
 
         const pricingResult = price({
             underwriting: underwritingResult,
-            property: property_data,
-            coverages: coverages,
+            property: safeProperty,
+            coverages: safeCoverages,
             addOns: add_ons
         });
 
@@ -98,7 +178,6 @@ const createPolicy = async (req, res) => {
             return res.status(400).json({ error: transition.error, code: 'STATE_TRANSITION_FAILED' });
         }
 
-        // 3. Database Persistence (Transaction)
         const client = await pool.connect();
         let dbPolicyId, dbVersion, dbCreatedAt;
 
@@ -114,16 +193,22 @@ const createPolicy = async (req, res) => {
                 reasoning: pricingResult.reasoning
             });
 
+            // Resolve dates: use tenant-submitted dates, fall back to today / +1 year
+            const startDate  = req.body.start_date  || new Date().toISOString().split('T')[0];
+            const expiryDate = req.body.expiry_date || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
             // Insert Policy root
             const polRes = await client.query(`
                 INSERT INTO Policies (tenant_id, property_id, premium_amount, coverage_amount, start_date, expiry_date, version_num, status, policy_document_url)
-                VALUES ($1, $2, $3, $4, CURRENT_DATE, CURRENT_DATE + INTERVAL '1 year', 1, $5, $6)
+                VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8)
                 RETURNING policy_id, version_num, created_at;
             `, [
                 req.user ? req.user.id : null, // Uses auth middleware context
-                req.body.property_id || property_data.property_id || null, // Safely fallback if mock bypassing auth
+                propertyId,
                 pricingResult.final_premium,
-                coverages.damage_cover_limit || 0, // Simplified root sum logic
+                safeCoverages.damage_cover_limit, // Consistent with PricingEngine usage
+                startDate,
+                expiryDate,
                 transition.next_state,
                 serializedDecisions // Persisting strictly required analytic data
             ]);
@@ -133,11 +218,11 @@ const createPolicy = async (req, res) => {
             dbCreatedAt = polRes.rows[0].created_at;
 
             // Optional: Map coverages to table
-            if (coverages.damage_cover_limit > 0) {
+            if (safeCoverages.damage_cover_limit > 0) {
                 await client.query(`
-                    INSERT INTO Coverages (policy_id, type, trigger_condition, payout_limit)
+                    INSERT INTO Coverages (policy_id, coverage_type, trigger_condition, payout_limit)
                     VALUES ($1, 'property_damage', 'physical_damage_proven', $2)
-                `, [dbPolicyId, coverages.damage_cover_limit]);
+                `, [dbPolicyId, safeCoverages.damage_cover_limit]);
             }
 
             // Optional: Map assets to table
@@ -153,10 +238,18 @@ const createPolicy = async (req, res) => {
             await client.query('COMMIT');
         } catch (dbErr) {
             await client.query('ROLLBACK');
-            if (dbErr.code === '23503') {
-                return res.status(400).json({ error: 'Database constraint failed (e.g., invalid Property ID).', code: 'DB_CONSTRAINT_FAILED' });
-            }
-            return res.status(500).json({ error: 'Database transaction aborted during constraint checks.', code: 'INTERNAL_ERROR' });
+            console.error("--- DB TRANSACTION FAILURE ---");
+            console.error("CODE:", dbErr.code);
+            console.error("MESSAGE:", dbErr.message);
+            console.error("DETAIL:", dbErr.detail);
+            console.error("STACK:", dbErr.stack);
+
+            return res.status(500).json({ 
+                error: dbErr.message, 
+                code: dbErr.code, 
+                detail: dbErr.detail,
+                hint: dbErr.hint
+            });
         } finally {
             client.release();
         }
@@ -281,9 +374,9 @@ const getPolicyContract = async (req, res) => {
         const html = generateContractHTML({
             policy_id: policy.policy_id,
             tenant_details: { name: policy.tenant_name },
-            property_details: { 
-                city: policy.property_city, 
-                rent_amount: policy.coverage_amount // approx fallback 
+            property_details: {
+                city: policy.property_city,
+                rent_amount: policy.property_rent_amount || 0
             },
             pricing_details: {
                 base: policy.premium_amount * 0.8,

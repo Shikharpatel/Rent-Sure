@@ -53,7 +53,7 @@ const Policy = {
     findById: async (policyId) => {
         const query = `
       SELECT pol.*, p.address AS property_address, p.city AS property_city,
-             u.name AS tenant_name
+             p.rent_amount AS property_rent_amount, u.name AS tenant_name
       FROM Policies pol
       JOIN Properties p ON pol.property_id = p.property_id
       JOIN Users u ON pol.tenant_id = u.user_id
