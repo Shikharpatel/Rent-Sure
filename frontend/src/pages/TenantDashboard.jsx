@@ -22,7 +22,8 @@ function TenantDashboard() {
   const [foundProperty, setFoundProperty] = useState(null);
   const [quote, setQuote] = useState(null);
   const [policyForm, setPolicyForm] = useState({
-    start_date: '', expiry_date: '', coverage_type: 'combined', damage_cover_limit: 500000 
+    start_date: '', expiry_date: '', coverage_type: 'combined', damage_cover_limit: 500000,
+    income: '', employment_months: ''
   });
   const [viewingContract, setViewingContract] = useState(null);
 
@@ -96,9 +97,9 @@ function TenantDashboard() {
       const quoteRes = await getPolicyQuote({
           property_data: propRes.data,
           tenant_data: {
-              income: 90000, // Extracted securely via verified KYC/Bank linked models in future
-              employment_months: 36,
-              kyc_status: kyc ? kyc.status : 'approved'
+              income: policyForm.income || 0,
+              employment_months: policyForm.employment_months || 0,
+              kyc_status: kyc ? kyc.status : 'not_submitted'
           },
           coverages: { damage_cover_limit: policyForm.damage_cover_limit, deductible: 10000 }
       });
@@ -125,7 +126,11 @@ function TenantDashboard() {
     try {
       const res = await createPolicy({
         property_data: foundProperty,
-        tenant_data: { income: 90000, employment_months: 36, kyc_status: kyc ? kyc.status : 'approved' },
+        tenant_data: {
+          income: policyForm.income || 0,
+          employment_months: policyForm.employment_months || 0,
+          kyc_status: kyc ? kyc.status : 'not_submitted'
+        },
         coverages: { damage_cover_limit: policyForm.damage_cover_limit, deductible: 10000 },
         start_date: policyForm.start_date,
         expiry_date: policyForm.expiry_date
@@ -137,7 +142,10 @@ function TenantDashboard() {
       setFoundProperty(null);
       setQuote(null);
       setInviteCode('');
-      setPolicyForm({ start_date: '', expiry_date: '', coverage_type: 'combined' });
+      setPolicyForm({ 
+        start_date: '', expiry_date: '', coverage_type: 'combined', 
+        damage_cover_limit: 500000, income: '', employment_months: '' 
+      });
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.message || 'Policy creation failed' });
     }
@@ -330,6 +338,16 @@ function TenantDashboard() {
                 <p style={{marginBottom: '20px', fontSize: '0.9rem', color: 'var(--text-secondary)'}}>
                   Ask your Landlord for their Property Invite Code to view the property and generate an insurance quote.
                 </p>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Monthly Income (₹)</label>
+                    <input className="input-field" type="number" placeholder="50000" value={policyForm.income} onChange={e => setPolicyForm({ ...policyForm, income: e.target.value })} required />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Employment Duration (Months)</label>
+                    <input className="input-field" type="number" placeholder="24" value={policyForm.employment_months} onChange={e => setPolicyForm({ ...policyForm, employment_months: e.target.value })} required />
+                  </div>
+                </div>
                 <div className="form-group">
                   <label className="form-label">Property Invite Code</label>
                   <input className="input-field" placeholder="XYZ-123" value={inviteCode} onChange={e => setInviteCode(e.target.value.toUpperCase())} required />

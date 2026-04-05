@@ -64,5 +64,7 @@ export const getPendingPolicies = () => api.get('/admin/policies/pending');
 export const reviewPolicy = (id, data) => api.post(`/admin/policies/${id}/review`, data);
 export const getPendingClaims = () => api.get('/admin/claims/pending');
 export const reviewClaim = (id, data) => api.post(`/admin/claims/${id}/review`, data);
+export const getPendingKYC = () => api.get('/kyc/pending');
+export const reviewKYC = (id, data) => api.put(`/kyc/${id}/review`, data);
 
 export default api;

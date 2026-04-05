@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getLossRatio, getFraudDistribution, getRiskSegmentation, getPendingPolicies, reviewPolicy, getPendingClaims, reviewClaim } from '../services/api';
+import { getLossRatio, getFraudDistribution, getRiskSegmentation, getPendingPolicies, reviewPolicy, getPendingClaims, reviewClaim, getPendingKYC, reviewKYC } from '../services/api';
 import './Dashboard.css';
 
 function AdminDashboard() {
@@ -12,7 +12,9 @@ function AdminDashboard() {
   
   const [policies, setPolicies] = useState([]);
   const [claims, setClaims] = useState([]);
+  const [kycPendings, setKycPendings] = useState([]);
   const [analytics, setAnalytics] = useState({ lossRatio: 0, fraudData: [], riskData: [] });
+  const [loadingError, setLoadingError] = useState(null);
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -31,22 +33,45 @@ function AdminDashboard() {
   }, []);
 
   const loadData = async () => {
+    setLoadingError(null);
     try {
-      const [polRes, claimRes, lossRes, fraudRes, riskRes] = await Promise.allSettled([
+      const results = await Promise.allSettled([
         getPendingPolicies(),
         getPendingClaims(),
+        getPendingKYC(),
         getLossRatio(),
         getFraudDistribution(),
         getRiskSegmentation()
       ]);
       
+      const [polRes, claimRes, kycRes, lossRes, fraudRes, riskRes] = results;
+
+      // Debug logs
+      console.log('KYC fetch status:', kycRes.status);
+      if (kycRes.status === 'fulfilled') console.log('KYC data:', kycRes.value.data);
+
+      results.forEach((res, index) => {
+        if (res.status === 'rejected') {
+          console.error(`Admin fetch error at index ${index}:`, res.reason);
+          // Set error if core data fails (0: policies, 1: claims, 2: kyc)
+          if (index <= 2) setLoadingError('Some critical data failed to load. Please refresh.');
+        }
+      });
+      
       if (polRes.status === 'fulfilled') setPolicies(polRes.value.data);
       if (claimRes.status === 'fulfilled') setClaims(claimRes.value.data);
+      if (kycRes.status === 'fulfilled') {
+          setKycPendings(kycRes.value.data);
+      } else {
+          setKycPendings(null); // Mark as failed
+      }
+
       if (lossRes.status === 'fulfilled') setAnalytics(prev => ({...prev, lossRatio: lossRes.value.data.data.loss_ratio }));
       if (fraudRes.status === 'fulfilled') setAnalytics(prev => ({...prev, fraudData: fraudRes.value.data.data }));
       if (riskRes.status === 'fulfilled') setAnalytics(prev => ({...prev, riskData: riskRes.value.data.data }));
     } catch (err) {
-      console.error(err);
+      console.error('loadData error:', err);
+      setLoadingError('Unexpected error loading dashboard.');
     } finally {
       setLoading(false);
     }
@@ -72,6 +97,16 @@ function AdminDashboard() {
     }
   };
 
+  const handleKYCReview = async (id, status) => {
+    try {
+        await reviewKYC(id, { status });
+        setMessage({ type: 'success', text: `KYC ${status} successfully!` });
+        setKycPendings(kycPendings.filter(k => k.kyc_id !== id));
+    } catch(err) {
+        setMessage({ type: 'error', text: err.response?.data?.message || 'Failed to review KYC' });
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -88,7 +123,7 @@ function AdminDashboard() {
           <span className="text-gradient">Rent</span>Sure <span style={{fontSize: '0.6em', color: 'var(--accent-1)', textTransform: 'uppercase'}}>[Admin]</span>
         </div>
         <nav className="sidebar-nav">
-          {['policies', 'claims', 'analytics'].map(tab => (
+          {['policies', 'claims', 'kyc', 'analytics'].map(tab => (
             <button key={tab} className={`sidebar-link ${activeTab === tab ? 'sidebar-link-active' : ''}`} onClick={() => { setActiveTab(tab); setMessage({ type: '', text: '' }); }}>
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
@@ -104,6 +139,13 @@ function AdminDashboard() {
         {message.text && (
           <div className={message.type === 'success' ? 'message-success' : 'message-error'}>
             {message.text}
+          </div>
+        )}
+
+        {loadingError && (
+          <div className="message-error" style={{marginBottom: '20px'}}>
+            {loadingError}
+            <button onClick={loadData} style={{marginLeft: '10px', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', textDecoration: 'underline'}}>Try Again</button>
           </div>
         )}
 
@@ -171,6 +213,40 @@ function AdminDashboard() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* KYC Approval */}
+        {activeTab === 'kyc' && (
+          <div className="animate-fade-in">
+            <h1 className="dash-title">KYC Verification Inbox</h1>
+            {kycPendings === null ? (
+                <p className="dash-empty" style={{color: '#e74c3c'}}>⚠️ Failed to load KYC data from server.</p>
+            ) : kycPendings.length === 0 ? (
+                <p className="dash-empty">No pending KYC records.</p>
+            ) : (
+              <div className="cards-grid">
+                {kycPendings.map(k => (
+                  <div key={k.kyc_id} className="glass-card policy-card">
+                    <div className="policy-header">
+                        <span>{k.tenant_name || 'Tenant ID: ' + k.user_id}</span>
+                        <span className="badge badge-warning">Pending Review</span>
+                    </div>
+                    <div className="policy-details">
+                        <div><span>PAN Number:</span>{k.pan_number}</div>
+                        <div><span>Address:</span>{k.address}</div>
+                        <div style={{gridColumn: '1 / -1', marginTop: '10px'}}>
+                            <a href={k.id_document_url} target="_blank" rel="noreferrer" className="auth-link" style={{fontSize: '0.85rem'}}>View Identity Document (PAN/Aadhar)</a>
+                        </div>
+                    </div>
+                    <div style={{display: 'flex', gap: '10px', marginTop: '15px'}}>
+                        <button className="btn-primary" style={{flex: 1}} onClick={() => handleKYCReview(k.kyc_id, 'approved')}>Approve Verification</button>
+                        <button className="btn-danger-sm" style={{flex: 1}} onClick={() => handleKYCReview(k.kyc_id, 'rejected')}>Reject KYC</button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
