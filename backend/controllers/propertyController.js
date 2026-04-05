@@ -11,7 +11,7 @@ const createProperty = async (req, res) => {
             return res.status(403).json({ message: 'Access denied. Landlords only.' });
         }
 
-        const { address, city, rent_amount, estimated_deposit, building_year } = req.body;
+        const { address, city, rent_amount, estimated_deposit, building_year, furnishing_level, property_type } = req.body;
 
         if (!address || !city || !rent_amount || estimated_deposit === undefined) {
             return res.status(400).json({ message: 'Please provide address, city, rent amount, and estimated deposit' });
@@ -19,7 +19,10 @@ const createProperty = async (req, res) => {
 
         const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-        const property = await Property.create(req.user.id, address, city, rent_amount, estimated_deposit, building_year, inviteCode);
+        const property = await Property.create(
+            req.user.id, address, city, rent_amount, estimated_deposit,
+            building_year, inviteCode, furnishing_level, property_type
+        );
         res.status(201).json(property);
     } catch (error) {
         console.error('Error in createProperty:', error);
@@ -82,25 +85,46 @@ const updateProperty = async (req, res) => {
             return res.status(404).json({ message: 'Property not found' });
         }
 
-        // Only the owner can update
         if (property.owner_id !== req.user.id) {
             return res.status(403).json({ message: 'Access denied. You are not the owner of this property.' });
         }
 
-        const { address, city, rent_amount, estimated_deposit, building_year } = req.body;
+        const { address, city, rent_amount, estimated_deposit, building_year, furnishing_level, property_type } = req.body;
         const updated = await Property.update(
             req.params.id,
             address || property.address,
             city || property.city,
             rent_amount || property.rent_amount,
             estimated_deposit !== undefined ? estimated_deposit : property.estimated_deposit,
-            building_year || property.building_year
+            building_year || property.building_year,
+            furnishing_level || property.furnishing_level,
+            property_type || property.property_type
         );
 
         res.status(200).json(updated);
     } catch (error) {
         console.error('Error in updateProperty:', error);
         res.status(500).json({ message: 'Server error updating property' });
+    }
+};
+
+// @desc    Regenerate invite code for a property
+// @route   POST /api/properties/:id/regenerate-invite
+// @access  Private (Owner only)
+const regenerateInviteCode = async (req, res) => {
+    try {
+        const property = await Property.findById(req.params.id);
+        if (!property) {
+            return res.status(404).json({ message: 'Property not found' });
+        }
+        if (property.owner_id !== req.user.id) {
+            return res.status(403).json({ message: 'Access denied. You are not the owner of this property.' });
+        }
+        const updated = await Property.regenerateInviteCode(req.params.id);
+        res.status(200).json(updated);
+    } catch (error) {
+        console.error('Error in regenerateInviteCode:', error);
+        res.status(500).json({ message: 'Server error regenerating invite code' });
     }
 };
 
@@ -132,5 +156,6 @@ module.exports = {
     getPropertyByInviteCode,
     getPropertyById,
     updateProperty,
+    regenerateInviteCode,
     deleteProperty,
 };
