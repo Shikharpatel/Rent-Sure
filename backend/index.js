@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const cron = require('node-cron');
 const db = require('./config/db');
 
 const app = express();
@@ -36,6 +37,24 @@ app.get('/api/health', async (req, res) => {
             status: 'error',
             message: 'Failed to connect to the database',
         });
+    }
+});
+
+// ── Policy Expiry Cron (runs daily at midnight) ───────────────────────────────
+// Finds all 'active' policies where expiry_date < TODAY and marks them 'expired'
+cron.schedule('0 0 * * *', async () => {
+    try {
+        const result = await db.query(`
+            UPDATE Policies
+            SET status = 'expired'
+            WHERE status = 'active' AND expiry_date < CURRENT_DATE
+            RETURNING policy_id;
+        `);
+        if (result.rows.length > 0) {
+            console.log(`[CRON] Expired ${result.rows.length} policies:`, result.rows.map(r => r.policy_id));
+        }
+    } catch (err) {
+        console.error('[CRON] Policy expiry job failed:', err.message);
     }
 });
 
