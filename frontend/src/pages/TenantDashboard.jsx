@@ -3,6 +3,19 @@ import { useNavigate } from 'react-router-dom';
 import { getMyPolicies, getMyPayments, getMyKYC, submitKYC, assessRisk, getMyRisk, getPropertyByInviteCode, getPolicyQuote, createPolicy, makePayment, getPolicyContract } from '../services/api';
 import './Dashboard.css';
 
+const ADD_ON_CATALOG = [
+  { key: 'appliance_cover',   label: 'Appliance Cover',      cost: 250, desc: 'Covers breakdown of listed appliances' },
+  { key: 'extended_rent',     label: 'Extended Rent Cover',  cost: 350, desc: 'One extra month of rent-default protection' },
+  { key: 'legal_cover',       label: 'Legal Cover',          cost: 200, desc: 'Legal dispute assistance up to ₹50,000' },
+  { key: 'accidental_damage', label: 'Accidental Damage',    cost: 150, desc: 'Covers sudden accidental damage to fixtures' },
+];
+
+const FURNISHING_SURCHARGE = {
+  unfurnished: '0%',
+  semi_furnished: '+8%',
+  fully_furnished: '+15%',
+};
+
 function TenantDashboard() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
@@ -21,11 +34,17 @@ function TenantDashboard() {
   const [inviteCode, setInviteCode] = useState('');
   const [foundProperty, setFoundProperty] = useState(null);
   const [quote, setQuote] = useState(null);
+  const [tenantData, setTenantData] = useState({ income: '', employment_months: '' });
   const [policyForm, setPolicyForm] = useState({
-    start_date: '', expiry_date: '', coverage_type: 'combined', damage_cover_limit: 500000,
-    income: '', employment_months: ''
+    start_date: '', expiry_date: '', coverage_type: 'combined', damage_cover_limit: 500000
+  });
+  const [addOns, setAddOns] = useState({
+    appliance_cover: false, extended_rent: false, legal_cover: false, accidental_damage: false
   });
   const [viewingContract, setViewingContract] = useState(null);
+  const [paymentModal, setPaymentModal] = useState({ open: false, policyId: null, amount: 0 });
+  const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [demoCard, setDemoCard] = useState({ number: '4111 1111 1111 1111', expiry: '12/28', cvv: '123', name: '' });
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -74,8 +93,17 @@ function TenantDashboard() {
   };
 
   const handleAssessRisk = async () => {
+    if (!tenantData.income || !tenantData.employment_months) {
+      setMessage({ type: 'error', text: 'Please enter income and employment duration first.' });
+      return;
+    }
     try {
-      const res = await assessRisk();
+      const res = await assessRisk({
+        tenant_data: {
+          income: Number(tenantData.income),
+          employment_months: Number(tenantData.employment_months)
+        }
+      });
       setRisk(res.data);
       setMessage({ type: 'success', text: 'Risk assessment completed!' });
     } catch (err) {
@@ -86,22 +114,21 @@ function TenantDashboard() {
   const handleFindProperty = async (e) => {
     e.preventDefault();
     if (!risk) {
-      setMessage({ type: 'error', text: 'You must complete an Approved Risk Assessment first!' });
+      setMessage({ type: 'error', text: 'You must complete a Risk Assessment first!' });
       return;
     }
-    
     try {
       const propRes = await getPropertyByInviteCode(inviteCode);
       setFoundProperty(propRes.data);
-      
+
       const quoteRes = await getPolicyQuote({
-          property_data: propRes.data,
-          tenant_data: {
-              income: policyForm.income || 0,
-              employment_months: policyForm.employment_months || 0,
-              kyc_status: kyc ? kyc.status : 'not_submitted'
-          },
-          coverages: { damage_cover_limit: policyForm.damage_cover_limit, deductible: 10000 }
+        property_id: propRes.data.property_id,
+        tenant_data: {
+          income: Number(tenantData.income),
+          employment_months: Number(tenantData.employment_months)
+        },
+        coverages: { damage_cover_limit: policyForm.damage_cover_limit, deductible: 10000 },
+        add_ons: addOns
       });
       setQuote(quoteRes.data);
       setMessage({ type: 'success', text: 'Property found and Quote generated!' });
@@ -112,51 +139,85 @@ function TenantDashboard() {
     }
   };
 
+  const refreshQuote = async (newCoverage, currentAddOns) => {
+    if (!foundProperty) return;
+    try {
+      const res = await getPolicyQuote({
+        property_id: foundProperty.property_id,
+        tenant_data: {
+          income: Number(tenantData.income),
+          employment_months: Number(tenantData.employment_months)
+        },
+        coverages: {
+          damage_cover_limit: newCoverage,
+          rent_default_months: 2
+        },
+        add_ons: currentAddOns || addOns
+      });
+      setQuote(res.data);
+    } catch (err) {
+      console.error('Quote refresh failed', err);
+    }
+  };
+
+  const handleAddOnToggle = (key) => {
+    const updated = { ...addOns, [key]: !addOns[key] };
+    setAddOns(updated);
+    refreshQuote(policyForm.damage_cover_limit, updated);
+  };
+
   const handleViewContract = async (policy_id) => {
-      try {
-          const res = await getPolicyContract(policy_id);
-          setViewingContract(res.data);
-      } catch (err) {
-          setMessage({ type: 'error', text: 'Unable to fetch contract' });
-      }
+    try {
+      const res = await getPolicyContract(policy_id);
+      setViewingContract(res.data);
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Unable to fetch contract' });
+    }
   };
 
   const handlePolicySubmit = async (e) => {
     e.preventDefault();
     try {
       const res = await createPolicy({
-        property_data: foundProperty,
+        property_id: foundProperty.property_id,
         tenant_data: {
-          income: policyForm.income || 0,
-          employment_months: policyForm.employment_months || 0,
-          kyc_status: kyc ? kyc.status : 'not_submitted'
+          income: Number(tenantData.income),
+          employment_months: Number(tenantData.employment_months)
         },
         coverages: { damage_cover_limit: policyForm.damage_cover_limit, deductible: 10000 },
+        add_ons: addOns,
         start_date: policyForm.start_date,
         expiry_date: policyForm.expiry_date
       });
       setPolicies([res.data, ...policies]);
-      setMessage({ type: 'success', text: 'Policy created! Awaiting activation.' });
-      
-      // Reset flow
+      setMessage({ type: 'success', text: 'Policy created! Awaiting admin activation.' });
       setFoundProperty(null);
       setQuote(null);
       setInviteCode('');
-      setPolicyForm({ 
-        start_date: '', expiry_date: '', coverage_type: 'combined', 
-        damage_cover_limit: 500000, income: '', employment_months: '' 
-      });
+      setAddOns({ appliance_cover: false, extended_rent: false, legal_cover: false, accidental_damage: false });
+      setPolicyForm({ start_date: '', expiry_date: '', coverage_type: 'combined', damage_cover_limit: 500000 });
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.message || 'Policy creation failed' });
     }
   };
 
-  const handlePayment = async (policyId, amount) => {
+  const handleOpenPayment = (policyId, amount) => {
+    setDemoCard(prev => ({ ...prev, name: user?.name || '' }));
+    setPaymentModal({ open: true, policyId, amount });
+  };
+
+  const handleCompletePayment = async () => {
+    setPaymentProcessing(true);
+    await new Promise(r => setTimeout(r, 1500));
     try {
-      const res = await makePayment({ policy_id: policyId, amount });
+      const res = await makePayment({ policy_id: paymentModal.policyId, amount: paymentModal.amount });
       setPayments([res.data, ...payments]);
-      setMessage({ type: 'success', text: 'Payment successful!' });
+      setPaymentModal({ open: false, policyId: null, amount: 0 });
+      setPaymentProcessing(false);
+      setMessage({ type: 'success', text: `Payment successful! Transaction ID: ${res.data.transaction_id}` });
     } catch (err) {
+      setPaymentProcessing(false);
+      setPaymentModal({ open: false, policyId: null, amount: 0 });
       setMessage({ type: 'error', text: err.response?.data?.message || 'Payment failed' });
     }
   };
@@ -171,6 +232,8 @@ function TenantDashboard() {
     const map = { approved: 'badge-success', active: 'badge-success', pending: 'badge-warning', rejected: 'badge-danger', success: 'badge-success', expired: 'badge-danger' };
     return <span className={`badge ${map[status] || 'badge-info'}`}>{status}</span>;
   };
+
+  const activeAddOnTotal = ADD_ON_CATALOG.filter(a => addOns[a.key]).reduce((s, a) => s + a.cost, 0);
 
   if (loading) return <div className="dash-loading"><div className="spinner"></div></div>;
 
@@ -222,7 +285,7 @@ function TenantDashboard() {
               </div>
               <div className="glass-card stat-card">
                 <div className="stat-label">Total Payments</div>
-                <div className="stat-value">₹{payments.reduce((s, p) => s + parseFloat(p.amount), 0).toLocaleString()}</div>
+                <div className="stat-value">₹{payments.reduce((s, p) => s + parseFloat(p.amount || 0), 0).toLocaleString()}</div>
               </div>
               <div className="glass-card stat-card">
                 <div className="stat-label">KYC Status</div>
@@ -286,6 +349,22 @@ function TenantDashboard() {
             )}
 
             <h2 className="dash-subtitle" style={{ marginTop: '40px' }}>Risk Assessment</h2>
+
+            {!risk && (
+              <div className="glass-card form-card" style={{ marginBottom: '20px' }}>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Monthly Income (₹)</label>
+                    <input className="input-field" type="number" placeholder="e.g. 50000" value={tenantData.income} onChange={e => setTenantData({ ...tenantData, income: e.target.value })} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Employment Duration (Months)</label>
+                    <input className="input-field" type="number" placeholder="e.g. 24" value={tenantData.employment_months} onChange={e => setTenantData({ ...tenantData, employment_months: e.target.value })} />
+                  </div>
+                </div>
+              </div>
+            )}
+
             {risk ? (
               <div className="glass-card detail-card">
                 <div className="detail-row"><span>Risk Score:</span><span>{risk.risk_score}/100</span></div>
@@ -293,7 +372,9 @@ function TenantDashboard() {
                 <div className="detail-row"><span>Assessed:</span><span>{new Date(risk.calculated_at).toLocaleDateString()}</span></div>
               </div>
             ) : (
-              <button className="btn-primary" onClick={handleAssessRisk}>Run Risk Assessment</button>
+              <button className="btn-primary" onClick={handleAssessRisk} disabled={!tenantData.income || !tenantData.employment_months}>
+                Run Risk Assessment
+              </button>
             )}
           </div>
         )}
@@ -308,17 +389,17 @@ function TenantDashboard() {
                 {policies.map(pol => (
                   <div key={pol.policy_id} className="glass-card policy-card">
                     <div className="policy-header">
-                      <span>{pol.property_address || 'Property'}, {pol.property_city}</span>
+                      <span>{pol.property_address || 'Property'}, {pol.property_city || 'Unknown City'}</span>
                       {statusBadge(pol.status)}
                     </div>
                     <div className="policy-details">
-                      <div><span>Premium:</span>₹{parseFloat(pol.premium_amount).toLocaleString()}/mo</div>
-                      <div><span>Coverage:</span>₹{parseFloat(pol.coverage_amount).toLocaleString()}</div>
-                      <div><span>Period:</span>{new Date(pol.start_date).toLocaleDateString()} – {new Date(pol.expiry_date).toLocaleDateString()}</div>
+                      <div><span>Premium:</span>₹{Number(pol.premium_amount || 0).toFixed(2)}/mo</div>
+                      <div><span>Coverage:</span>₹{Number(pol.coverage_amount || 0).toLocaleString()}</div>
+                      <div><span>Period:</span>{pol.start_date ? new Date(pol.start_date).toLocaleDateString() : 'N/A'} – {pol.expiry_date ? new Date(pol.expiry_date).toLocaleDateString() : 'N/A'}</div>
                     </div>
                     {pol.status === 'active' && (
                       <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-                        <button className="btn-primary" style={{ flex: 1 }} onClick={() => handlePayment(pol.policy_id, pol.premium_amount)}>
+                        <button className="btn-primary" style={{ flex: 1 }} onClick={() => handleOpenPayment(pol.policy_id, pol.premium_amount)}>
                           Pay ₹{parseFloat(pol.premium_amount).toLocaleString()}
                         </button>
                         <button className="btn-secondary" style={{ flex: 1 }} onClick={() => handleViewContract(pol.policy_id)}>
@@ -332,47 +413,126 @@ function TenantDashboard() {
             )}
 
             <h2 className="dash-subtitle" style={{ marginTop: '40px' }}>Purchase New Policy</h2>
-            
+
             {!quote ? (
               <form onSubmit={handleFindProperty} className="glass-card form-card">
-                <p style={{marginBottom: '20px', fontSize: '0.9rem', color: 'var(--text-secondary)'}}>
+                <p style={{ marginBottom: '20px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
                   Ask your Landlord for their Property Invite Code to view the property and generate an insurance quote.
                 </p>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Monthly Income (₹)</label>
-                    <input className="input-field" type="number" placeholder="50000" value={policyForm.income} onChange={e => setPolicyForm({ ...policyForm, income: e.target.value })} required />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Employment Duration (Months)</label>
-                    <input className="input-field" type="number" placeholder="24" value={policyForm.employment_months} onChange={e => setPolicyForm({ ...policyForm, employment_months: e.target.value })} required />
-                  </div>
-                </div>
                 <div className="form-group">
                   <label className="form-label">Property Invite Code</label>
                   <input className="input-field" placeholder="XYZ-123" value={inviteCode} onChange={e => setInviteCode(e.target.value.toUpperCase())} required />
                 </div>
-                <button type="submit" className="btn-primary">Find Property & Get Quote</button>
+
+                {/* Tenant data (shared across risk assessment and quoting) */}
+                {(!tenantData.income || !tenantData.employment_months) && (
+                  <div style={{ marginBottom: '16px', padding: '12px', background: 'rgba(245,158,11,0.08)', borderRadius: '8px', border: '1px solid rgba(245,158,11,0.2)', fontSize: '0.85rem', color: '#fbbf24' }}>
+                    ⚠ Please complete your Risk Assessment in the KYC tab first to enable quoting.
+                  </div>
+                )}
+
+                <button type="submit" className="btn-primary" disabled={!tenantData.income || !tenantData.employment_months}>
+                  Find Property & Get Quote
+                </button>
               </form>
             ) : (
               <form onSubmit={handlePolicySubmit} className="glass-card form-card">
-                <div className="detail-card" style={{padding: '16px', background: 'var(--bg-primary)', borderRadius: '8px', marginBottom: '24px'}}>
-                  <h3 style={{fontSize: '1.1rem', marginBottom: '12px'}}>{foundProperty.address}, {foundProperty.city}</h3>
-                  <div className="detail-row"><span>Underwriting Risk Score:</span><span style={{fontWeight: 'bold'}}>{quote.risk_details.score}/100 ({quote.risk_details.level})</span></div>
-                  <div className="detail-row"><span>Coverage (Damage Limit):</span><span style={{fontWeight: 'bold', color: 'var(--text-primary)'}}>₹{parseFloat(policyForm.damage_cover_limit).toLocaleString()}</span></div>
-                  <div className="detail-row" style={{borderTop: '1px solid var(--border-color)', paddingTop: '10px', marginTop: '10px'}}>
-                      <span>Base Premium:</span><span>₹{quote.pricing?.breakdown?.base || 0}</span>
-                  </div>
-                  <div className="detail-row" style={{paddingBottom: '10px', borderBottom: '1px solid var(--border-color)'}}>
-                      <span>Risk-Loaded Factor:</span><span>₹{quote.pricing?.breakdown?.risk_loading || 0}</span>
-                  </div>
-                  <div className="detail-row"><span>Final Monthly Premium:</span><span style={{fontWeight: 'bold', color: 'var(--accent-1)'}}>₹{parseFloat(quote.pricing?.final_premium || 0).toLocaleString()}/mo</span></div>
-                  
-                  <div style={{marginTop: '10px', fontSize: '0.85rem', color: 'var(--text-secondary)'}}>
-                      <strong>Engine Decision Summary:</strong> {quote.pricing?.summary || 'Calculations applied.'}
+                {/* Property Summary */}
+                <div style={{ padding: '16px', background: 'var(--bg-primary)', borderRadius: '8px', marginBottom: '20px' }}>
+                  <h3 style={{ fontSize: '1.1rem', marginBottom: '10px' }}>{foundProperty.address}, {foundProperty.city}</h3>
+                  {foundProperty.furnishing_level && foundProperty.furnishing_level !== 'unfurnished' && (
+                    <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                      Furnishing: <strong style={{ color: 'var(--text-primary)' }}>{foundProperty.furnishing_level.replace('_', ' ')}</strong>
+                      <span style={{ marginLeft: '6px', color: '#fbbf24' }}>({FURNISHING_SURCHARGE[foundProperty.furnishing_level]} premium surcharge)</span>
+                    </div>
+                  )}
+                  <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                    Underwriting Score: <strong style={{ color: 'var(--text-primary)' }}>{quote.risk_details.score}/100</strong>
+                    <span className={`badge ${quote.risk_details.level === 'low' ? 'badge-success' : quote.risk_details.level === 'medium' ? 'badge-warning' : 'badge-danger'}`} style={{ marginLeft: '8px', fontSize: '0.7rem' }}>
+                      {quote.risk_details.level?.toUpperCase()}
+                    </span>
                   </div>
                 </div>
 
+                {/* Coverage Limit Selector */}
+                <div className="form-group">
+                  <label className="form-label">Selected Coverage Limit</label>
+                  <select
+                    className="input-field"
+                    value={policyForm.damage_cover_limit}
+                    onChange={(e) => {
+                      const value = Number(e.target.value);
+                      setPolicyForm({ ...policyForm, damage_cover_limit: value });
+                      refreshQuote(value, addOns);
+                    }}
+                  >
+                    <option value={100000}>₹1,00,000 (Basic)</option>
+                    <option value={300000}>₹3,00,000 (Recommended)</option>
+                    <option value={500000}>₹5,00,000 (Elite)</option>
+                  </select>
+                </div>
+
+                {/* Add-Ons */}
+                <div style={{ marginBottom: '20px' }}>
+                  <label className="form-label" style={{ marginBottom: '12px', display: 'block' }}>Optional Add-Ons</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    {ADD_ON_CATALOG.map(addon => (
+                      <label
+                        key={addon.key}
+                        style={{
+                          display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px',
+                          background: addOns[addon.key] ? 'rgba(124,58,237,0.12)' : 'var(--bg-glass)',
+                          border: `1px solid ${addOns[addon.key] ? 'rgba(124,58,237,0.4)' : 'var(--border-subtle)'}`,
+                          borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={addOns[addon.key]}
+                          onChange={() => handleAddOnToggle(addon.key)}
+                          style={{ marginTop: '2px', accentColor: 'var(--accent-1)' }}
+                        />
+                        <div>
+                          <div style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-primary)' }}>{addon.label}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>{addon.desc}</div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--accent-1)', marginTop: '4px', fontWeight: '600' }}>+₹{addon.cost}/mo</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Pricing Breakdown */}
+                <div style={{ padding: '16px', background: 'var(--bg-primary)', borderRadius: '8px', marginBottom: '20px' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Premium Breakdown</div>
+
+                  <div className="detail-row"><span>Base Premium:</span><span>₹{Number(quote.pricing?.breakdown?.base || 0).toFixed(2)}</span></div>
+                  <div className="detail-row"><span>Coverage Costs:</span><span>₹{Number(quote.pricing?.breakdown?.coverage_costs || 0).toFixed(2)}</span></div>
+                  <div className="detail-row"><span>Property Surcharge:</span><span>₹{Number(quote.pricing?.breakdown?.property_surcharge || 0).toFixed(2)}</span></div>
+                  <div className="detail-row" style={{ paddingBottom: '10px', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <span>Risk Loading:</span><span>₹{Number(quote.pricing?.breakdown?.risk_loading || 0).toFixed(2)}</span>
+                  </div>
+                  {activeAddOnTotal > 0 && (
+                    <div className="detail-row"><span>Add-ons Total:</span><span style={{ color: 'var(--accent-1)' }}>₹{activeAddOnTotal}/mo</span></div>
+                  )}
+
+                  {quote.pricing?.cap_applied && (
+                    <div style={{ padding: '8px', background: 'rgba(255,165,0,0.1)', border: '1px solid orange', borderRadius: '4px', margin: '10px 0', fontSize: '0.8rem', color: 'orange' }}>
+                      ⚠️ Premium capped at 50% of rent to ensure affordability.
+                    </div>
+                  )}
+
+                  <div className="detail-row" style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
+                    <span style={{ fontWeight: '600' }}>Final Monthly Premium:</span>
+                    <span style={{ fontWeight: 'bold', fontSize: '1.1rem', color: 'var(--accent-1)' }}>₹{Number(quote.pricing?.final_premium || 0).toLocaleString()}/mo</span>
+                  </div>
+
+                  <div style={{ marginTop: '10px', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                    <strong>Engine Summary:</strong> {quote.pricing?.summary || 'Calculations applied.'}
+                  </div>
+                </div>
+
+                {/* Dates */}
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Start Date</label>
@@ -383,26 +543,25 @@ function TenantDashboard() {
                     <input className="input-field" type="date" value={policyForm.expiry_date} onChange={e => setPolicyForm({ ...policyForm, expiry_date: e.target.value })} required />
                   </div>
                 </div>
-                
-                <div style={{display: 'flex', gap: '12px'}}>
-                  <button type="button" className="btn-secondary" onClick={() => { setQuote(null); setFoundProperty(null); }} style={{padding: '12px 24px', flex: 1}}>Cancel</button>
-                  <button type="submit" className="btn-primary" style={{flex: 2}}>Accept Quote & Apply</button>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button type="button" className="btn-secondary" onClick={() => { setQuote(null); setFoundProperty(null); }} style={{ flex: 1 }}>Cancel</button>
+                  <button type="submit" className="btn-primary" style={{ flex: 2 }}>Accept Quote & Apply</button>
                 </div>
               </form>
             )}
 
-            {/* Contract Modal Overlay (repurposed dashboard layout container) */}
+            {/* Contract Viewer */}
             {viewingContract && (
-                <div style={{marginTop: '40px'}} className="animate-fade-in">
-                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px'}}>
-                        <h2 className="dash-subtitle" style={{margin: 0}}>Official Contract Document</h2>
-                        <button className="btn-secondary" onClick={() => setViewingContract(null)}>Close Viewer</button>
-                    </div>
-                    <div className="glass-card" style={{padding: '0', overflow: 'hidden', background: '#fff', color: '#000'}}>
-                        {/* We use dangerouslySetInnerHTML safely given it's generated entirely locally by our Backend Engines */}
-                        <div dangerouslySetInnerHTML={{ __html: viewingContract }} />
-                    </div>
+              <div style={{ marginTop: '40px' }} className="animate-fade-in">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <h2 className="dash-subtitle" style={{ margin: 0 }}>Official Contract Document</h2>
+                  <button className="btn-secondary" onClick={() => setViewingContract(null)}>Close Viewer</button>
                 </div>
+                <div className="glass-card" style={{ padding: '0', overflow: 'hidden', background: '#fff', color: '#000' }}>
+                  <div dangerouslySetInnerHTML={{ __html: viewingContract }} />
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -432,6 +591,82 @@ function TenantDashboard() {
           </div>
         )}
       </main>
+
+      {/* Payment Modal */}
+      {paymentModal.open && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div className="glass-card animate-fade-in" style={{ width: '420px', maxWidth: '95vw', padding: '32px', position: 'relative' }}>
+            <button
+              onClick={() => !paymentProcessing && setPaymentModal({ open: false, policyId: null, amount: 0 })}
+              style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: paymentProcessing ? 'not-allowed' : 'pointer', fontSize: '1.2rem', lineHeight: 1 }}
+            >✕</button>
+
+            <h2 style={{ fontSize: '1.2rem', marginBottom: '6px' }}>Complete Payment</h2>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '24px' }}>
+              Paying <strong style={{ color: 'var(--accent-1)' }}>₹{parseFloat(paymentModal.amount).toLocaleString()}</strong> via RazorDemo Gateway
+            </div>
+
+            {/* Visa card visual */}
+            <div style={{ background: 'linear-gradient(135deg, #1a1a3e 0%, #7c3aed 100%)', borderRadius: '12px', padding: '20px 24px', marginBottom: '24px', color: '#fff', fontFamily: 'monospace', userSelect: 'none' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <span style={{ fontSize: '0.65rem', opacity: 0.6, letterSpacing: '0.1em' }}>DEMO CARD</span>
+                <span style={{ fontSize: '1rem', fontStyle: 'italic', fontWeight: 'bold', fontFamily: 'serif' }}>VISA</span>
+              </div>
+              <div style={{ fontSize: '1.15rem', letterSpacing: '0.15em', marginBottom: '20px' }}>{demoCard.number}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                <div>
+                  <div style={{ opacity: 0.55, fontSize: '0.6rem', marginBottom: '2px', letterSpacing: '0.05em' }}>CARD HOLDER</div>
+                  <div>{demoCard.name || 'YOUR NAME'}</div>
+                </div>
+                <div>
+                  <div style={{ opacity: 0.55, fontSize: '0.6rem', marginBottom: '2px', letterSpacing: '0.05em' }}>EXPIRES</div>
+                  <div>{demoCard.expiry}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card fields */}
+            <div className="form-group">
+              <label className="form-label">Card Number</label>
+              <input className="input-field" value={demoCard.number} onChange={e => setDemoCard({ ...demoCard, number: e.target.value })} style={{ fontFamily: 'monospace', letterSpacing: '0.08em' }} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="form-group">
+                <label className="form-label">Expiry (MM/YY)</label>
+                <input className="input-field" value={demoCard.expiry} onChange={e => setDemoCard({ ...demoCard, expiry: e.target.value })} style={{ fontFamily: 'monospace' }} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">CVV</label>
+                <input className="input-field" type="password" value={demoCard.cvv} onChange={e => setDemoCard({ ...demoCard, cvv: e.target.value })} maxLength={3} style={{ fontFamily: 'monospace' }} />
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Cardholder Name</label>
+              <input className="input-field" value={demoCard.name} onChange={e => setDemoCard({ ...demoCard, name: e.target.value })} />
+            </div>
+
+            <button
+              className="btn-primary"
+              style={{ width: '100%', marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', opacity: paymentProcessing ? 0.75 : 1 }}
+              onClick={handleCompletePayment}
+              disabled={paymentProcessing}
+            >
+              {paymentProcessing ? (
+                <>
+                  <div className="spinner" style={{ width: '16px', height: '16px', borderWidth: '2px', margin: 0 }}></div>
+                  Processing...
+                </>
+              ) : (
+                `Pay ₹${parseFloat(paymentModal.amount).toLocaleString()}`
+              )}
+            </button>
+
+            <div style={{ marginTop: '12px', textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+              Secured by RazorDemo · Demo environment — no real charges applied
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
