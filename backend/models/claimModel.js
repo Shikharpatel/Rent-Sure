@@ -42,7 +42,20 @@ const Claim = {
         return result.rows[0];
     },
 
-    // Update claim status (admin approve/reject)
+    // Update claim status (admin approve/reject) — with notes + reviewer audit trail
+    review: async (claimId, status, adminNotes, reviewedBy) => {
+        const query = `
+      UPDATE Claims
+      SET status = $1, admin_notes = $2, reviewed_by = $3,
+          reviewed_at = NOW(), updated_at = NOW()
+      WHERE claim_id = $4
+      RETURNING *;
+    `;
+        const result = await db.query(query, [status, adminNotes || null, reviewedBy, claimId]);
+        return result.rows[0];
+    },
+
+    // Legacy: update status only (kept for backward compatibility)
     updateStatus: async (claimId, status) => {
         const query = `
       UPDATE Claims

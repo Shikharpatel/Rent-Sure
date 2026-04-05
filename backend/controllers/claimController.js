@@ -16,9 +16,30 @@ const fileClaim = async (req, res) => {
         const { claim_data = {}, policy_data = {} } = req.body;
         
         // 1. Validation Engine (Behavior)
+        // Resolve claim_type from damage_classification if not explicitly provided
+        const resolvedClaimType = claim_data.claim_type ||
+            (claim_data.damage_classification ? 'property_damage' : 'rent_default');
+
+        // Compute days_since_policy_start from actual policy start_date in DB
+        let daysSincePolicyStart = claim_data.days_since_policy_start || 0;
+        if (!daysSincePolicyStart && policy_data.policy_id) {
+            try {
+                const polRow = await pool.query('SELECT start_date FROM Policies WHERE policy_id = $1', [policy_data.policy_id]);
+                if (polRow.rows[0]?.start_date) {
+                    const startMs = new Date(polRow.rows[0].start_date).getTime();
+                    daysSincePolicyStart = Math.floor((Date.now() - startMs) / 86400000);
+                }
+            } catch (_) { /* non-critical */ }
+        }
+
+        // Normalize coverages to match engine expectations
+        const normalizedCoverages = (policy_data.coverages || []).map(c =>
+            c === 'property_damage' ? 'property_damage' : c
+        );
+
         const validationResult = validateClaim({
-            claim: claim_data,
-            policy: policy_data
+            claim: { ...claim_data, claim_type: resolvedClaimType, days_since_policy_start: daysSincePolicyStart },
+            policy: { ...policy_data, coverages: normalizedCoverages, waiting_period: 0 }
         });
 
         // 2. Adjudication Engine (Payout Math)
@@ -92,13 +113,18 @@ const fileClaim = async (req, res) => {
                 ? JSON.stringify(adjudicationResult.reasoning) 
                 : '[]';
 
+            // Normalise evidence URLs: accept array or fallback to single URL string
+            const evidenceUrls = Array.isArray(claim_data.evidence_urls) && claim_data.evidence_urls.length > 0
+                ? claim_data.evidence_urls.filter(u => u && u.trim())
+                : (claim_data.evidence_url ? [claim_data.evidence_url] : []);
+
             const claimQuery = `
                 INSERT INTO Claims (
-                    policy_id, landlord_id, description, claim_amount, 
-                    damage_classification, calculated_payout, fraud_score, 
-                    adjudication_reasoning, status
-                ) 
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    policy_id, landlord_id, description, claim_amount,
+                    damage_classification, calculated_payout, fraud_score,
+                    adjudication_reasoning, status, evidence_urls
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 RETURNING claim_id, created_at;
             `;
 
@@ -111,7 +137,8 @@ const fileClaim = async (req, res) => {
                 adjudicationResult.calculated_payout || 0,
                 fraudResult.fraud_score || 0,
                 reasonText,
-                currentState
+                currentState,
+                evidenceUrls   // pg driver sends JS arrays as PostgreSQL TEXT[]
             ]);
 
             dbClaimId = dbRes.rows[0].claim_id;

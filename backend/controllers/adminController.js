@@ -66,7 +66,7 @@ const getPendingClaims = async (req, res) => {
 // @access  Private (Admin)
 const reviewClaim = async (req, res) => {
     try {
-        const { action } = req.body; // 'approve' or 'reject'
+        const { action, admin_notes } = req.body; // 'approve' or 'reject', optional notes
         const claimId = req.params.id;
 
         if (!['approve', 'reject'].includes(action)) {
@@ -86,7 +86,7 @@ const reviewClaim = async (req, res) => {
             return res.status(400).json({ message: transition.error });
         }
 
-        const updated = await Claim.updateStatus(claimId, transition.next_state);
+        const updated = await Claim.review(claimId, transition.next_state, admin_notes || null, req.user.id);
         res.status(200).json(updated);
     } catch (error) {
         console.error('Error reviewing claim:', error);

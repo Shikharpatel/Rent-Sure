@@ -30,9 +30,18 @@ const makePayment = async (req, res) => {
             return res.status(400).json({ message: 'Policy is not active. Current status: ' + policy.status });
         }
 
-        // Simulate payment (always succeeds)
+        // Demo gateway simulation — generate fake order + transaction IDs
+        const fakeOrderId = 'ORD_' + Date.now();
+        const fakeTxnId   = 'TXN_' + Math.random().toString(36).substring(2, 10).toUpperCase();
+
         const payment = await Payment.create(policy_id, req.user.id, amount);
-        res.status(201).json(payment);
+        res.status(201).json({
+            ...payment,
+            order_id: fakeOrderId,
+            transaction_id: fakeTxnId,
+            gateway: 'RazorDemo',
+            gateway_status: 'captured'
+        });
     } catch (error) {
         console.error('Error in makePayment:', error);
         res.status(500).json({ message: 'Server error processing payment' });
