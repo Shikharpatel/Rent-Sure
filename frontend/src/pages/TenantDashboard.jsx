@@ -425,13 +425,13 @@ function TenantDashboard() {
                 </div>
 
                 {/* Tenant data (shared across risk assessment and quoting) */}
-                {(!tenantData.income || !tenantData.employment_months) && (
+                {!risk && (
                   <div style={{ marginBottom: '16px', padding: '12px', background: 'rgba(245,158,11,0.08)', borderRadius: '8px', border: '1px solid rgba(245,158,11,0.2)', fontSize: '0.85rem', color: '#fbbf24' }}>
                     ⚠ Please complete your Risk Assessment in the KYC tab first to enable quoting.
                   </div>
                 )}
 
-                <button type="submit" className="btn-primary" disabled={!tenantData.income || !tenantData.employment_months}>
+                <button type="submit" className="btn-primary" disabled={!risk}>
                   Find Property & Get Quote
                 </button>
               </form>
