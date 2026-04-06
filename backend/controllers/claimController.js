@@ -50,8 +50,16 @@ const fileClaim = async (req, res) => {
         });
 
         // 3. Fraud Detection Engine (Warning system)
+        const evidenceCount = Array.isArray(claim_data.evidence_urls)
+            ? claim_data.evidence_urls.filter(u => u && u.trim()).length
+            : (claim_data.evidence_url ? 1 : 0);
+
         const fraudResult = detectFraud({
-            claim: claim_data,
+            claim: {
+                ...claim_data,
+                days_since_policy_start: daysSincePolicyStart,
+                evidence_count: evidenceCount
+            },
             policy: policy_data
         });
 

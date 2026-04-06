@@ -22,6 +22,9 @@ const SCORING = {
     threshold_days: 45,
     points: 35
   },
+  NO_EVIDENCE: {
+    points: 30
+  },
   OVER_CLAIMING_VALUE: {
     points: 40
   },
@@ -64,7 +67,8 @@ function detectFraud(inputs = {}) {
   const daysSinceStart    = parseInt(claim.days_since_policy_start); // Can be 0
   const priorClaims       = parseInt(claim.claim_frequency) || 0;
   const declaredAssetVal  = parseFloat(claim.declared_asset_value) || 0;
-  
+  const evidenceCount     = parseInt(claim.evidence_count) || 0;
+
   const coverageLimit     = parseFloat(policy.coverage_limit) || 0;
 
   let rawScore = 0;
@@ -78,7 +82,15 @@ function detectFraud(inputs = {}) {
     );
   }
 
-  // 2. Over-Claiming (Assert Value Mismatch)
+  // 2. No Evidence Submitted
+  if (evidenceCount === 0) {
+    rawScore += SCORING.NO_EVIDENCE.points;
+    reasons.push(
+      `[NO EVIDENCE] Claim submitted with no supporting photos or documents. Added ${SCORING.NO_EVIDENCE.points} pts.`
+    );
+  }
+
+  // 3. Over-Claiming (Assert Value Mismatch)
   if (declaredAssetVal > 0 && claimAmount > declaredAssetVal) {
     rawScore += SCORING.OVER_CLAIMING_VALUE.points;
     reasons.push(
@@ -86,7 +98,7 @@ function detectFraud(inputs = {}) {
     );
   }
 
-  // 3. High Frequency (Pattern of Abuse)
+  // 4. High Frequency (Pattern of Abuse)
   if (priorClaims > 0) {
     const freqScore = priorClaims * SCORING.HIGH_FREQUENCY.points_per_prior_claim;
     rawScore += freqScore;
@@ -95,7 +107,7 @@ function detectFraud(inputs = {}) {
     );
   }
 
-  // 4. High Value Claim (Maxing Out Policy)
+  // 5. High Value Claim (Maxing Out Policy)
   if (coverageLimit > 0 && claimAmount > 0) {
     const ratio = claimAmount / coverageLimit;
     if (ratio >= SCORING.HIGH_VALUE_CLAIM.threshold_pct_of_limit) {
