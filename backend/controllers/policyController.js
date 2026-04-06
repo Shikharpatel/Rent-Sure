@@ -31,7 +31,7 @@ const getPolicyQuote = async (req, res) => {
         const safeCoverages = {
             damage_cover_limit: requestedLimit,
             rent_default_months: Number(coverages.rent_default_months || 2),
-            deductible: Number(coverages.deductible || 10000)
+            deductible: Number(coverages.deductible || 0)
         };
 
         // 0. Resolve Property ID and Fetch from DB (Trust Source)
@@ -118,7 +118,7 @@ const createPolicy = async (req, res) => {
         const safeCoverages = {
             damage_cover_limit: requestedLimit,
             rent_default_months: Number(coverages.rent_default_months || 2),
-            deductible: Number(coverages.deductible || 10000)
+            deductible: Number(coverages.deductible || 0)
         };
 
         // 0. Resolve Property ID strictly and Fetch from DB (Truth Source)

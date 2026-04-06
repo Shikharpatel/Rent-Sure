@@ -127,7 +127,7 @@ function TenantDashboard() {
           income: Number(tenantData.income),
           employment_months: Number(tenantData.employment_months)
         },
-        coverages: { damage_cover_limit: policyForm.damage_cover_limit, deductible: 10000 },
+        coverages: { damage_cover_limit: policyForm.damage_cover_limit, deductible: 0 },
         add_ons: addOns
       });
       setQuote(quoteRes.data);
@@ -184,7 +184,7 @@ function TenantDashboard() {
           income: Number(tenantData.income),
           employment_months: Number(tenantData.employment_months)
         },
-        coverages: { damage_cover_limit: policyForm.damage_cover_limit, deductible: 10000 },
+        coverages: { damage_cover_limit: policyForm.damage_cover_limit, deductible: 0 },
         add_ons: addOns,
         start_date: policyForm.start_date,
         expiry_date: policyForm.expiry_date

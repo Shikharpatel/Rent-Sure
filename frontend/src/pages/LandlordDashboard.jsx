@@ -113,7 +113,7 @@ function LandlordDashboard() {
         policy_data: {
           policy_id: claimForm.policy_id,
           coverage_limit: 500000,
-          deductible: 10000,
+          deductible: 0,
           coverages: ['property_damage', 'rent_default']
         }
       });
