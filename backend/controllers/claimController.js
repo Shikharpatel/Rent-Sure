@@ -54,11 +54,22 @@ const fileClaim = async (req, res) => {
             ? claim_data.evidence_urls.filter(u => u && u.trim()).length
             : (claim_data.evidence_url ? 1 : 0);
 
+        // Look up prior claim count for this landlord from DB (never trust frontend)
+        let priorClaimCount = 0;
+        try {
+            const priorRow = await pool.query(
+                'SELECT COUNT(*) AS cnt FROM Claims WHERE landlord_id = $1',
+                [req.user.id]
+            );
+            priorClaimCount = parseInt(priorRow.rows[0]?.cnt || 0);
+        } catch (_) { /* non-critical */ }
+
         const fraudResult = detectFraud({
             claim: {
                 ...claim_data,
                 days_since_policy_start: daysSincePolicyStart,
-                evidence_count: evidenceCount
+                evidence_count: evidenceCount,
+                claim_frequency: priorClaimCount
             },
             policy: policy_data
         });
