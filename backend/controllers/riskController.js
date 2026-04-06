@@ -1,29 +1,7 @@
 const RiskAssessment = require('../models/riskModel');
 const KYC = require('../models/kycModel');
 const User = require('../models/userModel');
-
-// Simulated risk scoring algorithm
-function calculateRisk(kycData) {
-    // In a real system, this would use credit scores, rental history, etc.
-    // For simulation, we generate a score based on simple heuristics
-    let score = Math.floor(Math.random() * 100) + 1; // 1–100
-
-    // If KYC is approved, lower the risk slightly
-    if (kycData && kycData.status === 'approved') {
-        score = Math.max(1, score - 15);
-    }
-
-    let level;
-    if (score <= 33) {
-        level = 'low';
-    } else if (score <= 66) {
-        level = 'medium';
-    } else {
-        level = 'high';
-    }
-
-    return { score, level };
-}
+const { assess } = require('../services/UnderwritingEngine');
 
 // @desc    Generate a risk assessment for a tenant
 // @route   POST /api/risk/assess
@@ -35,15 +13,34 @@ const assessRisk = async (req, res) => {
             return res.status(403).json({ message: 'Access denied. Tenants only.' });
         }
 
-        // Check KYC status
         const kyc = await KYC.findByUserId(req.user.id);
+        const { tenant_data = {} } = req.body;
 
-        const { score, level } = calculateRisk(kyc);
-        const assessment = await RiskAssessment.create(req.user.id, score, level);
+        // Run UnderwritingEngine with available data.
+        // rent_amount, city, furnishing_level are not known at standalone assessment time —
+        // the engine handles each gracefully (conservative penalty for missing income ratio,
+        // no penalty for missing city/furnishing).
+        const result = assess({
+            monthlyIncome: tenant_data.income || null,
+            rentAmount: null,
+            employmentStabilityMonths: tenant_data.employment_months || null,
+            kycStatus: kyc?.status || 'pending',
+            city: null,
+            furnishingLevel: null,
+            priorDefaults: 0
+        });
+
+        const assessment = await RiskAssessment.create(
+            req.user.id,
+            result.risk_score,
+            result.risk_level
+        );
 
         res.status(201).json({
             ...assessment,
             kyc_status: kyc ? kyc.status : 'not_submitted',
+            reasoning: result.reasoning,
+            probability_of_default: result.probability_of_default,
         });
     } catch (error) {
         console.error('Error in assessRisk:', error);
