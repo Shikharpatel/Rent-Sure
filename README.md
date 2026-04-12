@@ -22,6 +22,34 @@
 
 ---
 
+## 📸 Platform Previews
+
+### 🌐 The Rent-Sure Experience
+<img src="backend/utils/imagespack/WhatsApp%20Image%202026-04-12%20at%209.20.44%20PM.jpeg" width="800" alt="Landing Page">
+<br>
+<img src="backend/utils/imagespack/WhatsApp%20Image%202026-04-12%20at%209.21.06%20PM.jpeg" width="800" alt="Features">
+
+### 🛠️ Landlord Dashboard
+<img src="backend/utils/imagespack/WhatsApp%20Image%202026-04-12%20at%209.23.30%20PM.jpeg" width="800" alt="Landlord Overview">
+<br>
+<img src="backend/utils/imagespack/WhatsApp%20Image%202026-04-12%20at%209.23.43%20PM.jpeg" width="800" alt="My Properties">
+<br>
+<img src="backend/utils/imagespack/WhatsApp%20Image%202026-04-12%20at%209.23.57%20PM.jpeg" width="800" alt="File a Claim">
+
+### 🛡️ Admin Portal (Underwriting & Fraud)
+<img src="backend/utils/imagespack/WhatsApp%20Image%202026-04-12%20at%209.22.44%20PM.jpeg" width="800" alt="KYC Inbox">
+<br>
+<img src="backend/utils/imagespack/WhatsApp%20Image%202026-04-12%20at%209.21.38%20PM.jpeg" width="800" alt="Policies Under Review">
+<br>
+<img src="backend/utils/imagespack/WhatsApp%20Image%202026-04-12%20at%209.22.17%20PM.jpeg" width="800" alt="Claims Under Review">
+<br>
+<img src="backend/utils/imagespack/WhatsApp%20Image%202026-04-12%20at%209.23.00%20PM.jpeg" width="800" alt="Analytics">
+
+### 🧑‍💼 Tenant Flow
+<img src="backend/utils/imagespack/WhatsApp%20Image%202026-04-12%20at%209.24.55%20PM.jpeg" width="800" alt="Tenant KYC Status">
+
+---
+
 ## 🏗️ Architecture & Tech Stack
 
 Rent-Sure is built with modern, scalable web technologies:
