@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: rent-sure-backend
+    env: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+
+  - type: web
+    name: rent-sure-frontend
+    env: static
+    rootDir: frontend
+    buildCommand: "export VITE_API_URL=${BACKEND_URL}/api && npm install && npm run build"
+    staticPublishPath: ./dist
+    envVars:
+      - key: BACKEND_URL
+        fromService:
+          type: web
+          name: rent-sure-backend
+          envVarKey: RENDER_EXTERNAL_URL
